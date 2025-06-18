@@ -8,25 +8,43 @@
 </head>
 <body>
     <h1>TypeSprint</h1>
-    <div id="game-container">
-        <div id="text-to-type"></div>
-        <textarea id="user-input" rows="5" placeholder="Start typing here..."></textarea>
-        <div id="opponent-progress-container">
-            <h3>Opponent's Progress:</h3>
-            <div id="opponent-progress"></div>
-            <div id="opponent-stats">WPM: 0</div>
+
+    <div id="lobby-view">
+        <h2>Lobby</h2>
+        <div id="user-info">
+            <input type="text" id="player-name-input" placeholder="Enter your name to get a code" required>
         </div>
-        <div id="stats">
-            <div id="timer">Time: 0s</div>
-            <div id="wpm">WPM: 0</div>
+
+        <div id="your-lobby-info">
+            <h3>Your Lobby Code</h3>
+            <p id="lobby-code-display">Loading...</p>
+            <p><small>Share this code with friends. They can use it to join your game directly.</small></p>
         </div>
-    </div>
-    <div id="connection-container">
-        <h2>Multiplayer</h2>
-        <div>Your ID: <span id="my-id"></span></div>
-        <input type="text" id="peer-id-input" placeholder="Enter peer ID to connect">
-        <button id="connect-btn">Connect</button>
+
+        <hr>
+
+        <div id="join-lobby-section">
+            <h3>Join a Friend's Game</h3>
+            <input type="text" id="join-code-input" placeholder="Enter lobby code">
+            <button id="join-lobby-btn">Join Game</button>
+        </div>
+
         <div id="connection-status"></div>
+    </div>
+
+    <div id="game-view" class="hidden">
+        <h2 id="game-room-name"></h2>
+        <div id="game-container">
+            <div id="text-to-type"></div>
+            <textarea id="user-input" rows="5" placeholder="Start typing here..."></textarea>
+            <div id="players-progress">
+            </div>
+            <div id="stats">
+                <div id="timer">Time: 0s</div>
+                <div id="wpm">WPM: 0</div>
+            </div>
+        </div>
+        <button id="leave-room-btn">Leave Game</button>
     </div>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
