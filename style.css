@@ -1,0 +1,64 @@
+body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #f0f0f0;
+    margin: 0;
+}
+
+h1 {
+    color: #333;
+}
+
+#game-container {
+    width: 80%;
+    max-width: 800px;
+    margin-bottom: 20px;
+}
+
+#text-to-type {
+    border: 1px solid #ccc;
+    padding: 20px;
+    margin-bottom: 10px;
+    background-color: #fff;
+    font-size: 1.2em;
+    line-height: 1.5;
+}
+
+#user-input {
+    width: 100%;
+    padding: 10px;
+    font-size: 1.2em;
+    box-sizing: border-box;
+}
+
+#stats {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 10px;
+}
+
+#connection-container {
+    width: 80%;
+    max-width: 800px;
+    border: 1px solid #ccc;
+    padding: 20px;
+    background-color: #fff;
+}
+
+#connection-container h2 {
+    margin-top: 0;
+}
+
+#opponent-progress-container {
+    margin-top: 20px;
+}
+
+#opponent-progress {
+    border: 1px solid #ccc;
+    padding: 10px;
+    background-color: #f9f9f9;
+    min-height: 50px;
+}

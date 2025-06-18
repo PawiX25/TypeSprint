@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TypeSprint</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>TypeSprint</h1>
+    <div id="game-container">
+        <div id="text-to-type"></div>
+        <textarea id="user-input" rows="5" placeholder="Start typing here..."></textarea>
+        <div id="opponent-progress-container">
+            <h3>Opponent's Progress:</h3>
+            <div id="opponent-progress"></div>
+            <div id="opponent-stats">WPM: 0</div>
+        </div>
+        <div id="stats">
+            <div id="timer">Time: 0s</div>
+            <div id="wpm">WPM: 0</div>
+        </div>
+    </div>
+    <div id="connection-container">
+        <h2>Multiplayer</h2>
+        <div>Your ID: <span id="my-id"></span></div>
+        <input type="text" id="peer-id-input" placeholder="Enter peer ID to connect">
+        <button id="connect-btn">Connect</button>
+        <div id="connection-status"></div>
+    </div>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
