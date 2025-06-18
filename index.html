@@ -4,47 +4,101 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TypeSprint</title>
-    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        
+        #user-input {
+            opacity: 0;
+            z-index: 10;
+        }
+        .cursor::before {
+            content: '';
+            position: absolute;
+            width: 3px;
+            height: 80%;
+            top: 10%;
+            animation: blink 1s infinite;
+        }
+        .cursor.my-view::before {
+            background-color: #22c55e; 
+        }
+        .cursor.opponent-view::before {
+            background-color: #ef4444; 
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+    </style>
 </head>
-<body>
-    <h1>TypeSprint</h1>
+<body class="bg-white text-gray-900 font-sans flex flex-col items-center pt-8">
+    <h1 class="text-5xl font-bold mb-8">TypeSprint</h1>
 
-    <div id="lobby-view">
-        <h2>Lobby</h2>
+    
+    <div id="lobby-view" class="w-full max-w-2xl p-8 bg-gray-50 rounded-lg shadow-md space-y-6">
+        <h2 class="text-3xl font-semibold text-center">Lobby</h2>
+        
         <div id="user-info">
-            <input type="text" id="player-name-input" placeholder="Enter your name to get a code" required>
+            <input type="text" id="player-name-input" placeholder="Enter your name" required
+                   class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
         </div>
 
-        <div id="your-lobby-info">
-            <h3>Your Lobby Code</h3>
-            <p id="lobby-code-display">Loading...</p>
-            <p><small>Share this code with friends. They can use it to join your game directly.</small></p>
+        <div id="your-lobby-info" class="text-center p-4 bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg">
+            <h3 class="text-xl font-semibold text-gray-700">Your Lobby Code</h3>
+            <p id="lobby-code-display" class="text-2xl font-mono font-bold text-blue-600 my-2 tracking-wider">Loading...</p>
+            <p class="text-sm text-gray-500">Share this code with a friend to race!</p>
         </div>
 
-        <hr>
-
-        <div id="join-lobby-section">
-            <h3>Join a Friend's Game</h3>
-            <input type="text" id="join-code-input" placeholder="Enter lobby code">
-            <button id="join-lobby-btn">Join Game</button>
+        <div class="relative flex py-2 items-center">
+            <div class="flex-grow border-t border-gray-300"></div>
+            <span class="flex-shrink mx-4 text-gray-400 font-semibold">OR</span>
+            <div class="flex-grow border-t border-gray-300"></div>
         </div>
 
-        <div id="connection-status"></div>
+        <div id="join-lobby-section" class="space-y-3">
+            <h3 class="text-xl font-semibold text-gray-700 text-center">Join a Friend's Game</h3>
+            <div class="flex gap-2">
+                <input type="text" id="join-code-input" placeholder="Enter lobby code"
+                       class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <button id="join-lobby-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 transition-colors">
+                    Join Game
+                </button>
+            </div>
+        </div>
+        <div id="connection-status" class="text-center text-red-500 min-h-[1.25rem]"></div>
     </div>
 
-    <div id="game-view" class="hidden">
-        <h2 id="game-room-name"></h2>
-        <div id="game-container">
-            <div id="text-to-type"></div>
-            <textarea id="user-input" rows="5" placeholder="Start typing here..."></textarea>
-            <div id="players-progress">
+    
+    <div id="game-view" class="hidden w-full max-w-4xl p-8 space-y-12">
+        <h2 id="game-room-name" class="text-2xl font-semibold text-center text-gray-600"></h2>
+        
+        
+        <div id="my-view-container">
+            <p class="text-lg font-medium mb-2">my view</p>
+            <div class="relative">
+                
+                <div id="my-text-display" class="text-2xl font-mono p-4 border border-gray-200 rounded-md select-none tracking-wider leading-relaxed"></div>
+                
+                <textarea id="user-input" rows="5"
+                          class="absolute top-0 left-0 w-full h-full p-4 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wider leading-relaxed"></textarea>
             </div>
-            <div id="stats">
+        </div>
+        
+        
+        <div id="opponent-view-container">
+            <p class="text-lg font-medium mb-2">opponent view</p>
+             
+            <div id="opponent-text-display" class="text-2xl font-mono p-4 border border-gray-200 rounded-md select-none tracking-wider leading-relaxed"></div>
+        </div>
+
+        <div class="flex justify-between items-center mt-4">
+             <div id="stats" class="flex gap-6 text-xl font-semibold text-gray-700">
                 <div id="timer">Time: 0s</div>
                 <div id="wpm">WPM: 0</div>
             </div>
+            <button id="leave-room-btn" class="px-6 py-3 bg-red-600 text-white font-bold rounded-md hover:bg-red-700 transition-colors">
+                Leave Game
+            </button>
         </div>
-        <button id="leave-room-btn">Leave Game</button>
     </div>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
