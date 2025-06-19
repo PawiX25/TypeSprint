@@ -12,6 +12,11 @@ const userInput = document.getElementById('user-input');
 const timerDisplay = document.getElementById('timer');
 const wpmDisplay = document.getElementById('wpm');
 const leaveRoomBtn = document.getElementById('leave-room-btn');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const modalMessage = document.getElementById('modal-message');
+const modalCloseBtn = document.getElementById('modal-close-btn');
+const gameStatus = document.getElementById('game-status');
 
 let peer;
 let conn;
@@ -19,6 +24,9 @@ let playerName = '';
 let opponentName = '';
 let isHost = false;
 let gameFinished = false;
+let opponentFinished = false; 
+let myResult = null;
+let opponentResult = null;
 let startTime;
 let timerInterval;
 let originalText = '';
@@ -37,6 +45,16 @@ const peerConfig = {
         { urls: 'stun:stun1.l.google.com:19302' },
     ]
 };
+
+function showModal(title, message, onclose) {
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modal.classList.remove('hidden');
+    modalCloseBtn.onclick = () => {
+        modal.classList.add('hidden');
+        if (onclose) onclose();
+    };
+}
 
 function initializePeer() {
     peer = new Peer();
@@ -64,13 +82,13 @@ function initializePeer() {
 function joinGame() {
     playerName = playerNameInput.value.trim();
     if (!playerName) {
-        alert('Please enter your name.');
+        showModal('Input Error', 'Please enter your name.');
         return;
     }
 
     const joinCode = joinCodeInput.value.trim();
     if (!joinCode) {
-        alert('Please enter a lobby code to join.');
+        showModal('Input Error', 'Please enter a lobby code to join.');
         return;
     }
     
@@ -112,8 +130,7 @@ function setupConnectionEvents() {
     });
 
     conn.on('close', () => {
-        alert(`${opponentName || 'Opponent'} has left the game.`);
-        switchToLobbyView();
+        showModal('Connection Lost', `${opponentName || 'Opponent'} has left the game.`, switchToLobbyView);
     });
 }
 
@@ -127,6 +144,7 @@ function switchToGameView() {
     lobbyView.classList.add('hidden');
     gameView.classList.remove('hidden');
     gameRoomName.textContent = 'Waiting for opponent...';
+    gameStatus.textContent = '';
 }
 
 function populateTextDisplay(container, text) {
@@ -153,6 +171,9 @@ function startGame(sentence) {
     startTime = new Date().getTime();
     timerInterval = setInterval(updateTimer, 500);
     gameFinished = false;
+    opponentFinished = false;
+    myResult = null;
+    opponentResult = null;
     wpmDisplay.textContent = 'WPM: 0';
     timerDisplay.textContent = 'Time: 0s';
 }
@@ -210,15 +231,22 @@ function checkInput() {
 }
 
 function finishGame() {
+    if (gameFinished) return;
     gameFinished = true;
     clearInterval(timerInterval);
     userInput.disabled = true;
     const finalTime = Math.floor((new Date().getTime() - startTime) / 1000);
     const wpm = calculateWPM(userInput.value, finalTime);
-    const result = { time: finalTime, wpm: wpm };
-    alert(`You finished in ${result.time} seconds with ${result.wpm} WPM!`);
+    myResult = { time: finalTime, wpm: wpm };
+    
     if (conn) {
-        conn.send({ type: 'finished', payload: result });
+        conn.send({ type: 'finished', payload: myResult });
+    }
+
+    if (opponentFinished) {
+        showGameOverScreen();
+    } else {
+        showModal('Race Finished!', `You finished in ${myResult.time} seconds with ${myResult.wpm} WPM!\nWaiting for opponent...`);
     }
 }
 
@@ -227,10 +255,31 @@ function updateOpponentProgress(data) {
 }
 
 function handleOpponentFinished(result) {
-    if (!gameFinished) {
-        alert(`Opponent finished in ${result.time} seconds with ${result.wpm} WPM!`);
-    }
+    if (opponentFinished) return;
+    opponentFinished = true;
+    opponentResult = result;
     opponentTextDisplay.classList.add('opacity-50');
+
+    if (gameFinished) {
+        showGameOverScreen();
+    } else {
+        gameStatus.textContent = `Opponent finished in ${result.time}s with ${result.wpm} WPM! Keep going!`;
+    }
+}
+
+function showGameOverScreen() {
+    let title, message;
+    if (myResult.wpm > opponentResult.wpm) {
+        title = 'You Win!';
+        message = `Congratulations, ${playerName}!\n\nYour score: ${myResult.wpm} WPM (in ${myResult.time}s)\n${opponentName}'s score: ${opponentResult.wpm} WPM (in ${opponentResult.time}s)`;
+    } else if (myResult.wpm < opponentResult.wpm) {
+        title = 'You Lost!';
+        message = `Good effort, ${playerName}!\n\n${opponentName}'s score: ${opponentResult.wpm} WPM (in ${opponentResult.time}s)\nYour score: ${myResult.wpm} WPM (in ${myResult.time}s)`;
+    } else {
+        title = 'It\'s a Tie!';
+        message = `Incredible! You both got ${myResult.wpm} WPM.`;
+    }
+    showModal(title, message, switchToLobbyView);
 }
 
 function resetGame() {
@@ -247,6 +296,11 @@ function resetGame() {
     originalText = '';
     gameFinished = false;
     isHost = false;
+    opponentFinished = false;
+    myResult = null;
+    opponentResult = null;
+    gameStatus.textContent = '';
+    modal.classList.add('hidden');
 }
 
 joinLobbyBtn.addEventListener('click', joinGame);
