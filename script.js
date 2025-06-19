@@ -18,6 +18,8 @@ const modalMessage = document.getElementById('modal-message');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const gameStatus = document.getElementById('game-status');
 const yourLobbyInfo = document.getElementById('your-lobby-info');
+const myNameDisplay = document.getElementById('my-name-display');
+const opponentNameDisplay = document.getElementById('opponent-name-display');
 
 let peer;
 let conn;
@@ -51,10 +53,22 @@ function showModal(title, message, onclose) {
     modalTitle.textContent = title;
     modalMessage.textContent = message;
     modal.classList.remove('hidden');
+    modal.classList.add('fade-in');
     modalCloseBtn.onclick = () => {
         modal.classList.add('hidden');
+        modal.classList.remove('fade-in');
         if (onclose) onclose();
     };
+}
+
+function setLobbyCode(id) {
+    lobbyCodeDisplay.innerHTML = ''; // Clear "Loading..."
+    id.split('').forEach((char, index) => {
+        const span = document.createElement('span');
+        span.textContent = char;
+        span.style.animationDelay = `${index * 0.05}s`;
+        lobbyCodeDisplay.appendChild(span);
+    });
 }
 
 function initializePeer() {
@@ -63,14 +77,18 @@ function initializePeer() {
     yourLobbyInfo.style.display = 'none';
     playerNameInput.addEventListener('input', () => {
         if (playerNameInput.value.trim()) {
-            yourLobbyInfo.style.display = 'block';
+            if (yourLobbyInfo.style.display === 'none') {
+                yourLobbyInfo.style.display = 'block';
+                lobbyCodeDisplay.classList.add('animate-code-display');
+            }
         } else {
             yourLobbyInfo.style.display = 'none';
+            lobbyCodeDisplay.classList.remove('animate-code-display');
         }
     });
 
     peer.on('open', (id) => {
-        lobbyCodeDisplay.textContent = id;
+        setLobbyCode(id);
     });
 
     peer.on('connection', (newConn) => {
@@ -80,7 +98,7 @@ function initializePeer() {
         }
         isHost = true;
         conn = newConn;
-        playerName = playerNameInput.value.trim();
+        playerName = playerNameInput.value.trim() || 'Host';
         setupConnectionEvents();
     });
 
@@ -112,24 +130,22 @@ function joinGame() {
 
 function setupConnectionEvents() {
     conn.on('open', () => {
+        connectionStatus.textContent = '';
         conn.send({ type: 'name', payload: playerName });
-        switchToGameView();
-
-        if (isHost) {
-            const sentence = sentences[Math.floor(Math.random() * sentences.length)];
-            conn.send({ type: 'sentence', payload: sentence });
-            startGame(sentence);
-        }
     });
 
     conn.on('data', (data) => {
         switch (data.type) {
             case 'name':
                 opponentName = data.payload;
-                gameRoomName.textContent = `Racing against ${opponentName}`;
+                opponentNameDisplay.textContent = opponentName;
+                if (isHost) {
+                    startGame();
+                }
                 break;
-            case 'sentence':
-                startGame(data.payload);
+            case 'start-game':
+                originalText = data.payload;
+                startGame(originalText);
                 break;
             case 'progress':
                 updateOpponentProgress(data.payload);
@@ -141,7 +157,7 @@ function setupConnectionEvents() {
     });
 
     conn.on('close', () => {
-        showModal('Connection Lost', `${opponentName || 'Opponent'} has left the game.`, switchToLobbyView);
+        showModal('Connection Lost', `${opponentName} has disconnected.`, resetToLobby);
     });
 }
 
@@ -168,23 +184,38 @@ function populateTextDisplay(container, text) {
     });
 }
 
-function startGame(sentence) {
-    originalText = sentence;
-    populateTextDisplay(myTextDisplay, sentence);
-    populateTextDisplay(opponentTextDisplay, sentence);
+function startGame(text) {
+    gameFinished = false;
+    opponentFinished = false;
+    myResult = null;
+    opponentResult = null;
+    
+    lobbyView.classList.add('hidden');
+    gameView.classList.remove('hidden');
+    gameView.classList.add('fade-in');
+
+    myNameDisplay.textContent = playerName;
+    opponentNameDisplay.textContent = opponentName || 'Opponent';
+
+    if (isHost) {
+        originalText = sentences[Math.floor(Math.random() * sentences.length)];
+        conn.send({ type: 'start-game', payload: originalText });
+    } else {
+        originalText = text;
+    }
+
     userInput.maxLength = originalText.length;
 
     userInput.disabled = true;
     userInput.value = '';
     
+    populateTextDisplay(myTextDisplay, originalText);
+    populateTextDisplay(opponentTextDisplay, originalText);
+
     updateTextDisplay(myTextDisplay, '', 'my-view');
 
-    gameFinished = false;
-    opponentFinished = false;
-    myResult = null;
-    opponentResult = null;
-    wpmDisplay.textContent = 'WPM: 0';
-    timerDisplay.textContent = 'Time: 0s';
+    wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
+    timerDisplay.innerHTML = `Time: <span class="font-mono">0s</span>`;
     startCountdown();
 }
 
@@ -218,9 +249,9 @@ function beginTyping() {
 function updateTimer() {
     if (gameFinished) return;
     const elapsedTime = Math.floor((new Date().getTime() - startTime) / 1000);
-    timerDisplay.textContent = `Time: ${elapsedTime}s`;
+    timerDisplay.innerHTML = `Time: <span class="font-mono">${elapsedTime}s</span>`;
     const wpm = calculateWPM(userInput.value, elapsedTime);
-    wpmDisplay.textContent = `WPM: ${wpm}`;
+    wpmDisplay.innerHTML = `WPM: <span class="font-mono">${wpm}</span>`;
 
     if (conn) {
         conn.send({ type: 'progress', payload: { wpm, typedText: userInput.value } });
@@ -339,6 +370,36 @@ function resetGame() {
     opponentResult = null;
     gameStatus.textContent = '';
     modal.classList.add('hidden');
+}
+
+function resetToLobby() {
+    if (peer) {
+        peer.destroy();
+    }
+    initializePeer();
+
+    lobbyView.classList.remove('hidden');
+    gameView.classList.add('hidden');
+    lobbyView.classList.add('fade-in');
+
+    playerName = '';
+    opponentName = '';
+    isHost = false;
+    conn = null;
+    gameFinished = false;
+    opponentFinished = false;
+    myResult = null;
+    opponentResult = null;
+    originalText = '';
+    
+    joinCodeInput.value = '';
+    userInput.value = '';
+    connectionStatus.textContent = '';
+    gameStatus.textContent = '';
+    timerDisplay.innerHTML = `Time: <span class="font-mono">0s</span>`;
+    wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
+    myNameDisplay.textContent = 'You';
+    opponentNameDisplay.textContent = 'Opponent';
 }
 
 joinLobbyBtn.addEventListener('click', joinGame);
