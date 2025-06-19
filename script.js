@@ -172,21 +172,47 @@ function startGame(sentence) {
     originalText = sentence;
     populateTextDisplay(myTextDisplay, sentence);
     populateTextDisplay(opponentTextDisplay, sentence);
+    userInput.maxLength = originalText.length;
 
-    userInput.disabled = false;
+    userInput.disabled = true;
     userInput.value = '';
-    userInput.focus();
     
     updateTextDisplay(myTextDisplay, '', 'my-view');
 
-    startTime = new Date().getTime();
-    timerInterval = setInterval(updateTimer, 500);
     gameFinished = false;
     opponentFinished = false;
     myResult = null;
     opponentResult = null;
     wpmDisplay.textContent = 'WPM: 0';
     timerDisplay.textContent = 'Time: 0s';
+    startCountdown();
+}
+
+function startCountdown() {
+    gameStatus.textContent = 'Get Ready...';
+    setTimeout(() => {
+        gameStatus.textContent = '3...';
+    }, 1000);
+    setTimeout(() => {
+        gameStatus.textContent = '2...';
+    }, 2000);
+    setTimeout(() => {
+        gameStatus.textContent = '1...';
+    }, 3000);
+    setTimeout(() => {
+        gameStatus.textContent = 'GO!';
+        beginTyping();
+        setTimeout(() => {
+            gameStatus.textContent = '';
+        }, 1000); 
+    }, 4000);
+}
+
+function beginTyping() {
+    userInput.disabled = false;
+    userInput.focus();
+    startTime = new Date().getTime();
+    timerInterval = setInterval(updateTimer, 500);
 }
 
 function updateTimer() {
@@ -299,6 +325,7 @@ function resetGame() {
         conn.close();
         conn = null;
     }
+    userInput.removeAttribute('maxlength');
     userInput.disabled = true;
     userInput.value = '';
     myTextDisplay.innerHTML = '';
