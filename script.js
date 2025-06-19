@@ -17,6 +17,7 @@ const modalTitle = document.getElementById('modal-title');
 const modalMessage = document.getElementById('modal-message');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const gameStatus = document.getElementById('game-status');
+const yourLobbyInfo = document.getElementById('your-lobby-info');
 
 let peer;
 let conn;
@@ -59,6 +60,15 @@ function showModal(title, message, onclose) {
 function initializePeer() {
     peer = new Peer();
 
+    yourLobbyInfo.style.display = 'none';
+    playerNameInput.addEventListener('input', () => {
+        if (playerNameInput.value.trim()) {
+            yourLobbyInfo.style.display = 'block';
+        } else {
+            yourLobbyInfo.style.display = 'none';
+        }
+    });
+
     peer.on('open', (id) => {
         lobbyCodeDisplay.textContent = id;
     });
@@ -70,6 +80,7 @@ function initializePeer() {
         }
         isHost = true;
         conn = newConn;
+        playerName = playerNameInput.value.trim();
         setupConnectionEvents();
     });
 
