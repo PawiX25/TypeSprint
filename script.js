@@ -1,4 +1,8 @@
 const lobbyView = document.getElementById('lobby-view');
+const lobbyPlayers = document.getElementById('lobby-players');
+const playerList = document.getElementById('player-list');
+const readyBtn = document.getElementById('ready-btn');
+const startGameBtn = document.getElementById('start-game-btn');
 const gameView = document.getElementById('game-view');
 const playerNameInput = document.getElementById('player-name-input');
 const lobbyCodeDisplay = document.getElementById('lobby-code-display');
@@ -26,6 +30,7 @@ let conn;
 let playerName = '';
 let opponentName = '';
 let isHost = false;
+let players = {};
 let gameFinished = false;
 let opponentFinished = false; 
 let myResult = null;
@@ -59,6 +64,46 @@ function showModal(title, message, onclose) {
         modal.classList.remove('fade-in');
         if (onclose) onclose();
     };
+}
+
+function updatePlayerList() {
+    playerList.innerHTML = '';
+    for (const id in players) {
+        const player = players[id];
+        const playerDiv = document.createElement('div');
+        playerDiv.className = 'flex items-center justify-between p-3 bg-gray-800 rounded-lg';
+        playerDiv.innerHTML = `
+            <span class="font-medium text-gray-300">${player.name} ${id === peer.id ? '(You)' : ''}</span>
+            <span class="text-sm font-semibold ${player.ready ? 'text-green-400' : 'text-yellow-400'}">
+                ${player.ready ? 'Ready' : 'Not Ready'}
+            </span>
+        `;
+        playerList.appendChild(playerDiv);
+    }
+
+    if (isHost) {
+        const allReady = Object.values(players).every(p => p.ready);
+        if (allReady && Object.keys(players).length > 1) {
+            startGameBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            startGameBtn.disabled = false;
+        } else {
+            startGameBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            startGameBtn.disabled = true;
+        }
+    }
+}
+
+function showLobbyView() {
+    document.getElementById('user-info').style.display = 'none';
+    document.getElementById('your-lobby-info').style.display = 'none';
+    document.getElementById('join-lobby-section').style.display = 'none';
+    document.querySelector('.relative.flex.py-2.items-center').style.display = 'none';
+
+    lobbyPlayers.style.display = 'block';
+    if (isHost) {
+        startGameBtn.style.display = 'block';
+    }
+    updatePlayerList();
 }
 
 function setLobbyCode(id) {
@@ -99,6 +144,8 @@ function initializePeer() {
         isHost = true;
         conn = newConn;
         playerName = playerNameInput.value.trim() || 'Host';
+        players[peer.id] = { name: playerName, ready: false };
+        showLobbyView();
         setupConnectionEvents();
     });
 
@@ -131,17 +178,33 @@ function joinGame() {
 function setupConnectionEvents() {
     conn.on('open', () => {
         connectionStatus.textContent = '';
-        conn.send({ type: 'name', payload: playerName });
+        players[peer.id] = { name: playerName, ready: false };
+        conn.send({ type: 'name', payload: {id: peer.id, name: playerName} });
+        showLobbyView();
     });
 
     conn.on('data', (data) => {
         switch (data.type) {
             case 'name':
-                opponentName = data.payload;
+                opponentName = data.payload.name;
+                players[data.payload.id] = { name: opponentName, ready: false };
                 opponentNameDisplay.textContent = opponentName;
                 if (isHost) {
-                    startGame();
+                    conn.send({ type: 'player-update', payload: players });
                 }
+                updatePlayerList();
+                break;
+            case 'player-update':
+                players = data.payload;
+                updatePlayerList();
+                break;
+            case 'ready':
+                players[data.payload.id].ready = data.payload.ready;
+                if (isHost) {
+
+                    conn.send({ type: 'player-update', payload: players });
+                }
+                updatePlayerList();
                 break;
             case 'start-game':
                 originalText = data.payload;
@@ -380,12 +443,20 @@ function resetToLobby() {
 
     lobbyView.classList.remove('hidden');
     gameView.classList.add('hidden');
+    lobbyPlayers.style.display = 'none';
+    document.getElementById('user-info').style.display = 'block';
+    document.getElementById('your-lobby-info').style.display = 'block';
+    document.getElementById('join-lobby-section').style.display = 'block';
+    document.querySelector('.relative.flex.py-2.items-center').style.display = 'flex';
+
+
     lobbyView.classList.add('fade-in');
 
     playerName = '';
     opponentName = '';
     isHost = false;
     conn = null;
+    players = {};
     gameFinished = false;
     opponentFinished = false;
     myResult = null;
@@ -401,6 +472,25 @@ function resetToLobby() {
     myNameDisplay.textContent = 'You';
     opponentNameDisplay.textContent = 'Opponent';
 }
+
+readyBtn.addEventListener('click', () => {
+    const myPlayer = players[peer.id];
+    myPlayer.ready = !myPlayer.ready;
+    readyBtn.textContent = myPlayer.ready ? 'Unready' : 'Ready Up';
+    readyBtn.classList.toggle('bg-green-600', myPlayer.ready);
+    readyBtn.classList.toggle('hover:bg-green-700', myPlayer.ready);
+    readyBtn.classList.toggle('bg-yellow-600', !myPlayer.ready);
+    readyBtn.classList.toggle('hover:bg-yellow-700', !myPlayer.ready);
+
+    conn.send({ type: 'ready', payload: { id: peer.id, ready: myPlayer.ready } });
+    updatePlayerList();
+});
+
+startGameBtn.addEventListener('click', () => {
+    if (isHost) {
+        startGame();
+    }
+});
 
 joinLobbyBtn.addEventListener('click', joinGame);
 leaveRoomBtn.addEventListener('click', switchToLobbyView);
