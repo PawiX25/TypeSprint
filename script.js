@@ -10,9 +10,7 @@ const joinCodeInput = document.getElementById('join-code-input');
 const joinLobbyBtn = document.getElementById('join-lobby-btn');
 const connectionStatus = document.getElementById('connection-status');
 const gameRoomName = document.getElementById('game-room-name');
-const myTextDisplay = document.getElementById('my-text-display');
-const opponentTextDisplay = document.getElementById('opponent-text-display');
-const userInput = document.getElementById('user-input');
+const playerViewsContainer = document.getElementById('player-views-container');
 const timerDisplay = document.getElementById('timer');
 const wpmDisplay = document.getElementById('wpm');
 const leaveRoomBtn = document.getElementById('leave-room-btn');
@@ -22,19 +20,14 @@ const modalMessage = document.getElementById('modal-message');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const gameStatus = document.getElementById('game-status');
 const yourLobbyInfo = document.getElementById('your-lobby-info');
-const myNameDisplay = document.getElementById('my-name-display');
-const opponentNameDisplay = document.getElementById('opponent-name-display');
 
 let peer;
 let conn;
+let connections = {};
 let playerName = '';
-let opponentName = '';
 let isHost = false;
 let players = {};
 let gameFinished = false;
-let opponentFinished = false; 
-let myResult = null;
-let opponentResult = null;
 let startTime;
 let timerInterval;
 let originalText = '';
@@ -107,7 +100,7 @@ function showLobbyView() {
 }
 
 function setLobbyCode(id) {
-    lobbyCodeDisplay.innerHTML = ''; // Clear "Loading..."
+    lobbyCodeDisplay.innerHTML = '';
     id.split('').forEach((char, index) => {
         const span = document.createElement('span');
         span.textContent = char;
@@ -117,7 +110,9 @@ function setLobbyCode(id) {
 }
 
 function initializePeer() {
-    peer = new Peer();
+    peer = new Peer(null, { debug: 2 });
+    connections = {};
+    players = {};
 
     yourLobbyInfo.style.display = 'none';
     playerNameInput.addEventListener('input', () => {
@@ -137,16 +132,14 @@ function initializePeer() {
     });
 
     peer.on('connection', (newConn) => {
-        if (conn) { 
-            newConn.close();
-            return;
+        if (!isHost) {
+            isHost = true;
+            playerName = playerNameInput.value.trim() || 'Host';
+            players[peer.id] = { name: playerName, ready: false, finished: false, result: null };
+            showLobbyView();
         }
-        isHost = true;
-        conn = newConn;
-        playerName = playerNameInput.value.trim() || 'Host';
-        players[peer.id] = { name: playerName, ready: false };
-        showLobbyView();
-        setupConnectionEvents();
+        connections[newConn.peer] = newConn;
+        setupConnectionEvents(newConn);
     });
 
     peer.on('error', (err) => {
@@ -170,40 +163,48 @@ function joinGame() {
     
     if (conn) conn.close();
 
+    connections = {};
     isHost = false;
     conn = peer.connect(joinCode);
-    setupConnectionEvents();
+    setupConnectionEvents(conn);
 }
 
-function setupConnectionEvents() {
-    conn.on('open', () => {
-        connectionStatus.textContent = '';
-        players[peer.id] = { name: playerName, ready: false };
-        conn.send({ type: 'name', payload: {id: peer.id, name: playerName} });
-        showLobbyView();
-    });
+function broadcast(data) {
+    Object.values(connections).forEach(c => c.send(data));
+}
 
-    conn.on('data', (data) => {
+function handleData(data, senderId) {
+    if (isHost) {
         switch (data.type) {
             case 'name':
-                opponentName = data.payload.name;
-                players[data.payload.id] = { name: opponentName, ready: false };
-                opponentNameDisplay.textContent = opponentName;
-                if (isHost) {
-                    conn.send({ type: 'player-update', payload: players });
-                }
-                updatePlayerList();
-                break;
-            case 'player-update':
-                players = data.payload;
+                players[data.payload.id] = { name: data.payload.name, ready: false, finished: false, result: null };
+                broadcast({ type: 'player-update', payload: players });
                 updatePlayerList();
                 break;
             case 'ready':
-                players[data.payload.id].ready = data.payload.ready;
-                if (isHost) {
-
-                    conn.send({ type: 'player-update', payload: players });
+                if (players[data.payload.id]) {
+                    players[data.payload.id].ready = data.payload.ready;
+                    broadcast({ type: 'player-update', payload: players });
+                    updatePlayerList();
                 }
+                break;
+            case 'progress':
+                const progressData = { id: senderId, ...data.payload };
+                updateOpponentProgress(progressData);
+                broadcast({ type: 'progress', payload: progressData });
+                break;
+            case 'finished':
+                if (players[senderId]) {
+                    const finishedData = { id: senderId, result: data.payload };
+                    handleOpponentFinished(finishedData);
+                    broadcast({ type: 'finished', payload: finishedData });
+                }
+                break;
+        }
+    } else {
+        switch (data.type) {
+            case 'player-update':
+                players = data.payload;
                 updatePlayerList();
                 break;
             case 'start-game':
@@ -211,23 +212,69 @@ function setupConnectionEvents() {
                 startGame(originalText);
                 break;
             case 'progress':
-                updateOpponentProgress(data.payload);
+                if (data.payload.id !== peer.id) {
+                    updateOpponentProgress(data.payload);
+                }
                 break;
             case 'finished':
-                handleOpponentFinished(data.payload);
+                if (data.payload.id !== peer.id) {
+                    handleOpponentFinished(data.payload);
+                }
                 break;
+            case 'host-left':
+                showModal('Game Over', 'The host has left the game.', resetToLobby);
+                break;
+        }
+    }
+}
+
+function setupConnectionEvents(c) {
+    c.on('open', () => {
+        if (!isHost) {
+            connectionStatus.textContent = '';
+            players[peer.id] = { name: playerName, ready: false, finished: false, result: null };
+            c.send({ type: 'name', payload: {id: peer.id, name: playerName} });
+            showLobbyView();
         }
     });
 
-    conn.on('close', () => {
-        showModal('Connection Lost', `${opponentName} has disconnected.`, resetToLobby);
+    c.on('data', (data) => {
+        handleData(data, c.peer);
+    });
+
+    c.on('close', () => {
+        if (isHost) {
+            const disconnectedPlayerName = players[c.peer]?.name || 'A player';
+            showModal('Player Left', `${disconnectedPlayerName} has disconnected.`);
+            delete connections[c.peer];
+            delete players[c.peer];
+            broadcast({ type: 'player-update', payload: players });
+            updatePlayerList();
+        } else {
+            showModal('Connection Lost', 'The host has disconnected.', resetToLobby);
+        }
     });
 }
 
 function switchToLobbyView() {
     gameView.classList.add('hidden');
     lobbyView.classList.remove('hidden');
-    resetGame();
+    
+    gameFinished = false;
+    Object.values(players).forEach(p => {
+        p.ready = false;
+        p.finished = false;
+        p.result = null;
+    });
+    originalText = '';
+    clearInterval(timerInterval);
+    
+    readyBtn.textContent = 'Ready Up';
+    readyBtn.className = 'w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors';
+    updatePlayerList();
+    if (isHost) {
+        broadcast({ type: 'player-update', payload: players });
+    }
 }
 
 function switchToGameView() {
@@ -247,34 +294,75 @@ function populateTextDisplay(container, text) {
     });
 }
 
+function createPlayerView(playerId, isMe) {
+    const player = players[playerId];
+    const view = document.createElement('div');
+    view.id = `player-view-${playerId}`;
+    view.className = 'glassmorphism p-6 rounded-lg';
+
+    const nameColor = isMe ? 'text-cyan-300' : 'text-red-400';
+    const textColor = isMe ? 'text-gray-300' : 'text-gray-500';
+
+    let content = `
+        <p class="text-lg font-medium mb-3 ${nameColor}">${player.name} ${isMe ? '(You)' : ''}</p>
+        <div class="relative">
+            <div id="text-display-${playerId}" class="text-2xl font-mono select-none tracking-wide leading-relaxed ${textColor}"></div>
+    `;
+
+    if (isMe) {
+        content += `
+            <textarea id="user-input" rows="5"
+                      class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
+        `;
+    }
+    
+    content += `</div>`;
+    view.innerHTML = content;
+    return view;
+}
+
 function startGame(text) {
     gameFinished = false;
-    opponentFinished = false;
-    myResult = null;
-    opponentResult = null;
+    Object.keys(players).forEach(id => {
+        players[id].finished = false;
+        players[id].result = null;
+    });
     
     lobbyView.classList.add('hidden');
     gameView.classList.remove('hidden');
     gameView.classList.add('fade-in');
 
-    myNameDisplay.textContent = playerName;
-    opponentNameDisplay.textContent = opponentName || 'Opponent';
+    playerViewsContainer.innerHTML = '';
+
+    const myPlayerView = createPlayerView(peer.id, true);
+    playerViewsContainer.appendChild(myPlayerView);
+
+    Object.keys(players).forEach(playerId => {
+        if (playerId === peer.id) return;
+        const playerView = createPlayerView(playerId, false);
+        playerViewsContainer.appendChild(playerView);
+    });
+
+    const userInput = document.getElementById('user-input');
+    userInput.addEventListener('input', checkInput);
 
     if (isHost) {
         originalText = sentences[Math.floor(Math.random() * sentences.length)];
-        conn.send({ type: 'start-game', payload: originalText });
+        broadcast({ type: 'start-game', payload: originalText });
     } else {
         originalText = text;
     }
 
     userInput.maxLength = originalText.length;
-
     userInput.disabled = true;
     userInput.value = '';
     
-    populateTextDisplay(myTextDisplay, originalText);
-    populateTextDisplay(opponentTextDisplay, originalText);
+    Object.keys(players).forEach(playerId => {
+        const textDisplay = document.getElementById(`text-display-${playerId}`);
+        populateTextDisplay(textDisplay, originalText);
+    });
 
+    const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
     updateTextDisplay(myTextDisplay, '', 'my-view');
 
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
@@ -303,6 +391,7 @@ function startCountdown() {
 }
 
 function beginTyping() {
+    const userInput = document.getElementById('user-input');
     userInput.disabled = false;
     userInput.focus();
     startTime = new Date().getTime();
@@ -311,13 +400,18 @@ function beginTyping() {
 
 function updateTimer() {
     if (gameFinished) return;
+    const userInput = document.getElementById('user-input');
     const elapsedTime = Math.floor((new Date().getTime() - startTime) / 1000);
     timerDisplay.innerHTML = `Time: <span class="font-mono">${elapsedTime}s</span>`;
     const wpm = calculateWPM(userInput.value, elapsedTime);
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">${wpm}</span>`;
 
-    if (conn) {
-        conn.send({ type: 'progress', payload: { wpm, typedText: userInput.value } });
+    if (isHost) {
+        const payload = { type: 'progress', payload: { id: peer.id, wpm, typedText: userInput.value } };
+        broadcast(payload);
+    } else if (conn) {
+        const payload = { type: 'progress', payload: { wpm, typedText: userInput.value } };
+        conn.send(payload);
     }
 }
 
@@ -353,7 +447,9 @@ function updateTextDisplay(container, typedText, viewType) {
 function checkInput() {
     if (gameFinished) return;
 
+    const userInput = document.getElementById('user-input');
     const typedText = userInput.value;
+    const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
     updateTextDisplay(myTextDisplay, typedText, 'my-view');
 
     if (typedText === originalText) {
@@ -362,73 +458,105 @@ function checkInput() {
 }
 
 function finishGame() {
-    if (gameFinished) return;
+    if (players[peer.id].finished) return;
     gameFinished = true;
+    players[peer.id].finished = true;
+
     clearInterval(timerInterval);
+    const userInput = document.getElementById('user-input');
     userInput.disabled = true;
     const finalTime = Math.floor((new Date().getTime() - startTime) / 1000);
     const wpm = calculateWPM(userInput.value, finalTime);
-    myResult = { time: finalTime, wpm: wpm };
+    players[peer.id].result = { time: finalTime, wpm: wpm };
     
-    if (conn) {
+    const myResult = players[peer.id].result;
+
+    if (isHost) {
+        broadcast({ type: 'finished', payload: { id: peer.id, result: myResult } });
+        checkAllFinished();
+    } else {
         conn.send({ type: 'finished', payload: myResult });
     }
 
-    if (opponentFinished) {
-        showGameOverScreen();
-    } else {
-        showModal('Race Finished!', `You finished in ${myResult.time} seconds with ${myResult.wpm} WPM!\nWaiting for opponent...`);
+    const allFinished = Object.values(players).every(p => p.finished);
+    if (!allFinished) {
+        showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} WPM!\nWaiting for other players...`);
+    }
+}
+
+function checkAllFinished() {
+    const allFinished = Object.values(players).every(p => p.finished);
+    if (allFinished) {
+        setTimeout(showGameOverScreen, 100);
     }
 }
 
 function updateOpponentProgress(data) {
-    updateTextDisplay(opponentTextDisplay, data.typedText, 'opponent-view');
+    const opponentTextDisplay = document.getElementById(`text-display-${data.id}`);
+    if (opponentTextDisplay) {
+        updateTextDisplay(opponentTextDisplay, data.typedText, 'opponent-view');
+    }
 }
 
-function handleOpponentFinished(result) {
-    if (opponentFinished) return;
-    opponentFinished = true;
-    opponentResult = result;
-    opponentTextDisplay.classList.add('opacity-50');
-
-    if (gameFinished) {
-        showGameOverScreen();
-    } else {
-        gameStatus.textContent = `Opponent finished in ${result.time}s with ${result.wpm} WPM! Keep going!`;
+function handleOpponentFinished(data) {
+    if (players[data.id] && !players[data.id].finished) {
+        players[data.id].finished = true;
+        players[data.id].result = data.result;
+        
+        const opponentView = document.getElementById(`player-view-${data.id}`);
+        if (opponentView) {
+            opponentView.classList.add('opacity-50');
+        }
+        
+        gameStatus.textContent = `${players[data.id].name} finished!`;
+        checkAllFinished();
     }
 }
 
 function showGameOverScreen() {
-    let title, message;
-    if (myResult.wpm > opponentResult.wpm) {
+    const sortedPlayers = Object.values(players).sort((a, b) => {
+        if (!a.result) return 1;
+        if (!b.result) return -1;
+        return b.result.wpm - a.result.wpm;
+    });
+
+    let title = 'Game Over!';
+    if (sortedPlayers.length > 0 && sortedPlayers[0].name === players[peer.id].name) {
         title = 'You Win!';
-        message = `Congratulations, ${playerName}!\n\nYour score: ${myResult.wpm} WPM (in ${myResult.time}s)\n${opponentName}'s score: ${opponentResult.wpm} WPM (in ${opponentResult.time}s)`;
-    } else if (myResult.wpm < opponentResult.wpm) {
-        title = 'You Lost!';
-        message = `Good effort, ${playerName}!\n\n${opponentName}'s score: ${opponentResult.wpm} WPM (in ${opponentResult.time}s)\nYour score: ${myResult.wpm} WPM (in ${myResult.time}s)`;
-    } else {
-        title = 'It\'s a Tie!';
-        message = `Incredible! You both got ${myResult.wpm} WPM.`;
     }
+
+    let message = sortedPlayers.map((p, index) => {
+        if (p.result) {
+            return `${index + 1}. ${p.name}: ${p.result.wpm} WPM (in ${p.result.time}s)`;
+        } else {
+            return `${index + 1}. ${p.name}: Did not finish`;
+        }
+    }).join('\n');
+
     showModal(title, message, switchToLobbyView);
 }
 
 function resetGame() {
     clearInterval(timerInterval);
-    if (conn) {
+    if (isHost) {
+        broadcast({ type: 'host-left' });
+        Object.values(connections).forEach(c => c.close());
+    } else if (conn) {
         conn.close();
-        conn = null;
     }
-    userInput.removeAttribute('maxlength');
-    userInput.disabled = true;
-    userInput.value = '';
-    myTextDisplay.innerHTML = '';
-    opponentTextDisplay.innerHTML = '';
-    opponentTextDisplay.classList.remove('opacity-50');
+    conn = null;
+    connections = {};
+
+    const userInput = document.getElementById('user-input');
+    if (userInput) {
+        userInput.removeAttribute('maxlength');
+        userInput.disabled = true;
+        userInput.value = '';
+    }
+    playerViewsContainer.innerHTML = '';
     originalText = '';
     gameFinished = false;
     isHost = false;
-    opponentFinished = false;
     myResult = null;
     opponentResult = null;
     gameStatus.textContent = '';
@@ -436,6 +564,9 @@ function resetGame() {
 }
 
 function resetToLobby() {
+    if (isHost) {
+        broadcast({ type: 'host-left' });
+    }
     if (peer) {
         peer.destroy();
     }
@@ -445,7 +576,7 @@ function resetToLobby() {
     gameView.classList.add('hidden');
     lobbyPlayers.style.display = 'none';
     document.getElementById('user-info').style.display = 'block';
-    document.getElementById('your-lobby-info').style.display = 'block';
+    yourLobbyInfo.style.display = 'none';
     document.getElementById('join-lobby-section').style.display = 'block';
     document.querySelector('.relative.flex.py-2.items-center').style.display = 'flex';
 
@@ -453,24 +584,17 @@ function resetToLobby() {
     lobbyView.classList.add('fade-in');
 
     playerName = '';
-    opponentName = '';
     isHost = false;
     conn = null;
     players = {};
     gameFinished = false;
-    opponentFinished = false;
-    myResult = null;
-    opponentResult = null;
     originalText = '';
     
     joinCodeInput.value = '';
-    userInput.value = '';
     connectionStatus.textContent = '';
     gameStatus.textContent = '';
     timerDisplay.innerHTML = `Time: <span class="font-mono">0s</span>`;
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
-    myNameDisplay.textContent = 'You';
-    opponentNameDisplay.textContent = 'Opponent';
 }
 
 readyBtn.addEventListener('click', () => {
@@ -482,7 +606,12 @@ readyBtn.addEventListener('click', () => {
     readyBtn.classList.toggle('bg-yellow-600', !myPlayer.ready);
     readyBtn.classList.toggle('hover:bg-yellow-700', !myPlayer.ready);
 
-    conn.send({ type: 'ready', payload: { id: peer.id, ready: myPlayer.ready } });
+    const payload = { type: 'ready', payload: { id: peer.id, ready: myPlayer.ready } };
+    if (isHost) {
+        handleData(payload, peer.id);
+    } else {
+        conn.send(payload);
+    }
     updatePlayerList();
 });
 
@@ -493,8 +622,8 @@ startGameBtn.addEventListener('click', () => {
 });
 
 joinLobbyBtn.addEventListener('click', joinGame);
-leaveRoomBtn.addEventListener('click', switchToLobbyView);
-userInput.addEventListener('input', checkInput);
+leaveRoomBtn.addEventListener('click', resetToLobby);
+
 playerNameInput.addEventListener('keyup', (e) => {
     if (e.key === 'Enter') {
         joinCodeInput.focus();

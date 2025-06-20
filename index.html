@@ -124,22 +124,7 @@
             <div id="game-view" class="hidden w-full space-y-10 fade-in">
                 <div id="game-status" class="text-center text-2xl font-semibold text-cyan-400 min-h-[2rem] mb-4"></div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <!-- My View -->
-                    <div id="my-view-container" class="glassmorphism p-6 rounded-lg">
-                        <p id="my-name-display" class="text-lg font-medium mb-3 text-cyan-300">You</p>
-                        <div class="relative">
-                            <div id="my-text-display" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300"></div>
-                            <textarea id="user-input" rows="5"
-                                      class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
-                        </div>
-                    </div>
-
-                    <!-- Opponent View -->
-                    <div id="opponent-view-container" class="glassmorphism p-6 rounded-lg">
-                        <p id="opponent-name-display" class="text-lg font-medium mb-3 text-red-400">Opponent</p>
-                        <div id="opponent-text-display" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-500"></div>
-                    </div>
+                <div id="player-views-container" class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 </div>
 
                 <div class="flex justify-between items-center mt-6">
