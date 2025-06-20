@@ -59,12 +59,45 @@
         .fade-in {
             animation: fadeIn 0.5s ease-out forwards;
         }
+        @keyframes scaleUp {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .scale-up {
+            animation: scaleUp 0.3s ease-out forwards;
+        }
+        .cursor-element {
+            position: absolute;
+            width: 2px;
+            height: 1.5rem;
+            top: 0.25rem;
+            animation: blink 1s infinite;
+            transition: left 0.1s linear;
+        }
+        .toggle-checkbox {
+            left: -0.1rem;
+            transition: left 0.2s ease-in-out;
+        }
+        .toggle-checkbox:checked {
+            left: 1.1rem;
+            background-color: #67e8f9;
+            border-color: #0891b2;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #0e7490;
+        }
     </style>
 </head>
 <body class="antialiased flex flex-col items-center justify-center min-h-screen p-4">
     <div id="app-container" class="w-full max-w-4xl mx-auto">
-        <header class="text-center mb-12">
+        <header class="text-center mb-12 relative">
             <h1 class="text-6xl font-bold text-white tracking-tighter">TypeSprint</h1>
+            <button id="settings-btn" class="absolute top-1/2 right-0 -translate-y-1/2 p-2 text-gray-400 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+            </button>
         </header>
 
         <main id="main-content">
@@ -147,6 +180,24 @@
             <h3 id="modal-title" class="text-2xl font-bold mb-4"></h3>
             <p id="modal-message" class="text-gray-300 mb-6"></p>
             <button id="modal-close-btn" class="px-6 py-2 bg-cyan-600 text-white font-bold rounded-lg hover:bg-cyan-700 transition-colors">Close</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+        <div id="settings-modal-content" class="glassmorphism p-8 rounded-lg shadow-xl max-w-sm w-full">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold">Settings</h3>
+                <button id="settings-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            
+            <div class="flex items-center justify-between text-gray-300">
+                <label for="scrolling-view-toggle" class="font-medium">Scrolling View</label>
+                <div class="relative inline-block w-10 align-middle select-none">
+                    <input type="checkbox" name="scrolling-view-toggle" id="scrolling-view-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-gray-800 border-2 border-gray-600 appearance-none cursor-pointer"/>
+                    <label for="scrolling-view-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer"></label>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -20,6 +20,11 @@ const modalMessage = document.getElementById('modal-message');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const gameStatus = document.getElementById('game-status');
 const yourLobbyInfo = document.getElementById('your-lobby-info');
+const scrollingViewToggle = document.getElementById('scrolling-view-toggle');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+const settingsModalContent = document.getElementById('settings-modal-content');
 
 let peer;
 let conn;
@@ -31,6 +36,7 @@ let gameFinished = false;
 let startTime;
 let timerInterval;
 let originalText = '';
+let scrollingViewEnabled = false;
 
 const sentences = [
     "The quick brown fox jumps over the lazy dog.",
@@ -303,10 +309,20 @@ function createPlayerView(playerId, isMe) {
     const nameColor = isMe ? 'text-cyan-300' : 'text-red-400';
     const textColor = isMe ? 'text-gray-300' : 'text-gray-500';
 
+    let textDisplayContainerClass = "relative";
+    let textDisplayClass = `text-2xl font-mono select-none tracking-wide leading-relaxed ${textColor}`;
+
+    if (isMe && scrollingViewEnabled) {
+        textDisplayContainerClass += " overflow-hidden";
+        textDisplayClass += " whitespace-nowrap transition-transform duration-200 ease-linear";
+    }
+
     let content = `
         <p class="text-lg font-medium mb-3 ${nameColor}">${player.name} ${isMe ? '(You)' : ''}</p>
         <div class="relative">
-            <div id="text-display-${playerId}" class="text-2xl font-mono select-none tracking-wide leading-relaxed ${textColor}"></div>
+            <div id="text-display-container-${playerId}" class="${textDisplayContainerClass}">
+                <div id="text-display-${playerId}" class="${textDisplayClass}"></div>
+            </div>
     `;
 
     if (isMe) {
@@ -319,6 +335,39 @@ function createPlayerView(playerId, isMe) {
     content += `</div>`;
     view.innerHTML = content;
     return view;
+}
+
+function updateScrollingView(typedText) {
+    const textDisplay = document.getElementById('text-display-shared');
+    if (!textDisplay) return;
+    const spans = textDisplay.querySelectorAll('span');
+
+    typedText.split('').forEach((char, index) => {
+        if (spans[index]) {
+            spans[index].classList.remove('text-gray-400', 'text-green-500', 'text-red-500');
+            if (char === originalText[index]) {
+                spans[index].classList.add('text-green-500');
+            } else {
+                spans[index].classList.add('text-red-500');
+            }
+        }
+    });
+
+    const myCursor = document.getElementById(`cursor-${peer.id}`);
+    if (myCursor) {
+        if (typedText.length < spans.length) {
+            myCursor.style.left = `${spans[typedText.length].offsetLeft}px`;
+        } else if (typedText.length === spans.length) {
+            const lastSpan = spans[spans.length - 1];
+            myCursor.style.left = `${lastSpan.offsetLeft + lastSpan.offsetWidth}px`;
+        }
+    }
+
+    const textContainer = textDisplay.parentElement;
+    const containerRect = textContainer.getBoundingClientRect();
+    const cursorLeft = myCursor ? (spans[typedText.length]?.offsetLeft || 0) : 0;
+    const scrollOffset = cursorLeft - (containerRect.width / 2);
+    textDisplay.style.transform = `translateX(-${scrollOffset}px)`;
 }
 
 function startGame(text) {
@@ -334,18 +383,6 @@ function startGame(text) {
 
     playerViewsContainer.innerHTML = '';
 
-    const myPlayerView = createPlayerView(peer.id, true);
-    playerViewsContainer.appendChild(myPlayerView);
-
-    Object.keys(players).forEach(playerId => {
-        if (playerId === peer.id) return;
-        const playerView = createPlayerView(playerId, false);
-        playerViewsContainer.appendChild(playerView);
-    });
-
-    const userInput = document.getElementById('user-input');
-    userInput.addEventListener('input', checkInput);
-
     if (isHost) {
         originalText = sentences[Math.floor(Math.random() * sentences.length)];
         broadcast({ type: 'start-game', payload: originalText });
@@ -353,17 +390,63 @@ function startGame(text) {
         originalText = text;
     }
 
+    if (scrollingViewEnabled) {
+        playerViewsContainer.className = 'grid grid-cols-1 gap-8';
+        const view = document.createElement('div');
+        view.className = 'glassmorphism p-6 rounded-lg';
+        let content = `
+            <div class="relative">
+                <div class="overflow-hidden">
+                    <div id="text-display-shared" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300 whitespace-nowrap relative transition-transform duration-300 ease-out">
+                    </div>
+                </div>
+                <textarea id="user-input" rows="5"
+                    class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
+            </div>
+        `;
+        view.innerHTML = content;
+        playerViewsContainer.appendChild(view);
+        
+        const textDisplay = document.getElementById('text-display-shared');
+        populateTextDisplay(textDisplay, originalText);
+
+        Object.keys(players).forEach(playerId => {
+            const isMe = playerId === peer.id;
+            const cursor = document.createElement('div');
+            cursor.id = `cursor-${playerId}`;
+            cursor.className = `cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}`;
+            textDisplay.appendChild(cursor);
+        });
+
+    } else {
+        playerViewsContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-8';
+        const myPlayerView = createPlayerView(peer.id, true);
+        playerViewsContainer.appendChild(myPlayerView);
+
+        Object.keys(players).forEach(playerId => {
+            if (playerId === peer.id) return;
+            const playerView = createPlayerView(playerId, false);
+            playerViewsContainer.appendChild(playerView);
+        });
+        
+        Object.keys(players).forEach(playerId => {
+            const textDisplay = document.getElementById(`text-display-${playerId}`);
+            populateTextDisplay(textDisplay, originalText);
+        });
+    }
+
+
+    const userInput = document.getElementById('user-input');
+    userInput.addEventListener('input', checkInput);
+
     userInput.maxLength = originalText.length;
     userInput.disabled = true;
     userInput.value = '';
     
-    Object.keys(players).forEach(playerId => {
-        const textDisplay = document.getElementById(`text-display-${playerId}`);
-        populateTextDisplay(textDisplay, originalText);
-    });
-
-    const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
-    updateTextDisplay(myTextDisplay, '', 'my-view');
+    if (!scrollingViewEnabled) {
+        const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
+        updateTextDisplay(myTextDisplay, '', 'my-view');
+    }
 
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
     timerDisplay.innerHTML = `Time: <span class="font-mono">0s</span>`;
@@ -442,6 +525,19 @@ function updateTextDisplay(container, typedText, viewType) {
     if (typedText.length < originalText.length) {
         spans[typedText.length].classList.add('cursor', viewType);
     }
+
+    if (viewType === 'my-view' && scrollingViewEnabled) {
+        const cursorSpan = container.querySelector('.cursor.my-view');
+        if (cursorSpan) {
+            const containerWrapper = container.parentElement;
+            const containerRect = containerWrapper.getBoundingClientRect();
+            const cursorRect = cursorSpan.getBoundingClientRect();
+            
+            const scrollOffset = cursorRect.left - containerRect.left - (containerRect.width / 2) + (cursorRect.width / 2);
+            
+            container.style.transform = `translateX(-${scrollOffset}px)`;
+        }
+    }
 }
 
 function checkInput() {
@@ -449,8 +545,13 @@ function checkInput() {
 
     const userInput = document.getElementById('user-input');
     const typedText = userInput.value;
-    const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
-    updateTextDisplay(myTextDisplay, typedText, 'my-view');
+    
+    if (scrollingViewEnabled) {
+        updateScrollingView(typedText);
+    } else {
+        const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
+        updateTextDisplay(myTextDisplay, typedText, 'my-view');
+    }
 
     if (typedText === originalText) {
         finishGame();
@@ -478,6 +579,11 @@ function finishGame() {
         conn.send({ type: 'finished', payload: myResult });
     }
 
+    if (scrollingViewEnabled && isHost) {
+        const textDisplay = document.getElementById('text-display-shared');
+        if(textDisplay) textDisplay.style.transform = 'translateX(0px)';
+    }
+
     const allFinished = Object.values(players).every(p => p.finished);
     if (!allFinished) {
         showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} WPM!\nWaiting for other players...`);
@@ -492,6 +598,21 @@ function checkAllFinished() {
 }
 
 function updateOpponentProgress(data) {
+    if (scrollingViewEnabled) {
+        const cursor = document.getElementById(`cursor-${data.id}`);
+        const textDisplay = document.getElementById('text-display-shared');
+        if (cursor && textDisplay) {
+            const spans = textDisplay.querySelectorAll('span');
+            if (data.typedText.length < spans.length) {
+                cursor.style.left = `${spans[data.typedText.length].offsetLeft}px`;
+            } else if (data.typedText.length === spans.length) {
+                const lastSpan = spans[spans.length - 1];
+                cursor.style.left = `${lastSpan.offsetLeft + lastSpan.offsetWidth}px`;
+            }
+        }
+        return;
+    }
+
     const opponentTextDisplay = document.getElementById(`text-display-${data.id}`);
     if (opponentTextDisplay) {
         updateTextDisplay(opponentTextDisplay, data.typedText, 'opponent-view');
@@ -633,6 +754,22 @@ joinCodeInput.addEventListener('keyup', (e) => {
     if (e.key === 'Enter') {
         joinGame();
     }
+});
+
+settingsBtn.addEventListener('click', () => {
+    settingsModal.classList.remove('hidden');
+    settingsModal.classList.add('fade-in');
+    settingsModalContent.classList.add('scale-up');
+});
+
+settingsCloseBtn.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+    settingsModal.classList.remove('fade-in');
+    settingsModalContent.classList.remove('scale-up');
+});
+
+scrollingViewToggle.addEventListener('change', (e) => {
+    scrollingViewEnabled = e.target.checked;
 });
 
 initializePeer();
