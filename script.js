@@ -149,7 +149,7 @@ function initializePeer() {
         if (!isHost) {
             isHost = true;
             playerName = playerNameInput.value.trim() || 'Host';
-            players[peer.id] = { name: playerName, ready: false, finished: false, result: null };
+            players[peer.id] = { name: playerName, ready: false, finished: false, result: null, typedText: '' };
             showLobbyView();
         }
         connections[newConn.peer] = newConn;
@@ -191,7 +191,7 @@ function handleData(data, senderId) {
     if (isHost) {
         switch (data.type) {
             case 'name':
-                players[data.payload.id] = { name: data.payload.name, ready: false, finished: false, result: null };
+                players[data.payload.id] = { name: data.payload.name, ready: false, finished: false, result: null, typedText: '' };
                 broadcast({ type: 'player-update', payload: players });
                 updatePlayerList();
                 break;
@@ -203,6 +203,9 @@ function handleData(data, senderId) {
                 }
                 break;
             case 'progress':
+                if (players[senderId]) {
+                    players[senderId].typedText = data.payload.typedText;
+                }
                 const progressData = { id: senderId, ...data.payload };
                 updateOpponentProgress(progressData);
                 broadcast({ type: 'progress', payload: progressData });
@@ -226,6 +229,9 @@ function handleData(data, senderId) {
                 break;
             case 'progress':
                 if (data.payload.id !== peer.id) {
+                    if (players[data.payload.id]) {
+                        players[data.payload.id].typedText = data.payload.typedText;
+                    }
                     updateOpponentProgress(data.payload);
                 }
                 break;
@@ -245,7 +251,7 @@ function setupConnectionEvents(c) {
     c.on('open', () => {
         if (!isHost) {
             connectionStatus.textContent = '';
-            players[peer.id] = { name: playerName, ready: false, finished: false, result: null };
+            players[peer.id] = { name: playerName, ready: false, finished: false, result: null, typedText: '' };
             c.send({ type: 'name', payload: {id: peer.id, name: playerName} });
             showLobbyView();
         }
@@ -382,6 +388,7 @@ function startGame(text) {
     Object.keys(players).forEach(id => {
         players[id].finished = false;
         players[id].result = null;
+        players[id].typedText = '';
     });
     
     lobbyView.classList.add('hidden');
@@ -493,13 +500,6 @@ function updateTimer() {
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">${wpm}</span>`;
 
     raceStats.push({ time: elapsedTime, wpm, accuracy });
-
-    if (isHost) {
-        broadcast({ type: 'progress', payload: { id: peer.id, progress: userInput.value.length, wpm: wpm } });
-    } else {
-        const payload = { type: 'progress', payload: { wpm, typedText: userInput.value } };
-        conn.send(payload);
-    }
 }
 
 function calculateWPM(text, elapsedTime) {
@@ -566,10 +566,14 @@ function checkInput() {
         updateTextDisplay(myTextDisplay, typedText, 'my-view');
     }
 
+    if (players[peer.id]) {
+        players[peer.id].typedText = typedText;
+    }
+
     if (isHost) {
-        broadcast({ type: 'progress', payload: { id: peer.id, progress: typedText } });
+        broadcast({ type: 'progress', payload: { id: peer.id, typedText: typedText } });
     } else {
-        conn.send({ type: 'progress', payload: { id: peer.id, progress: typedText } });
+        conn.send({ type: 'progress', payload: { typedText: typedText } });
     }
 
     const normalizedTypedText = typedText.replace(/\r\n/g, '\n');
@@ -637,7 +641,7 @@ function updateOpponentProgress(data) {
 
     const opponentTextDisplay = document.getElementById(`text-display-${data.id}`);
     if (opponentTextDisplay) {
-        updateTextDisplay(opponentTextDisplay, data.progress, 'opponent-view');
+        updateTextDisplay(opponentTextDisplay, data.typedText, 'opponent-view');
     }
 }
 
@@ -910,6 +914,90 @@ settingsCloseBtn.addEventListener('click', () => {
 
 scrollingViewToggle.addEventListener('change', (e) => {
     scrollingViewEnabled = e.target.checked;
+
+    if (!startTime || gameFinished) {
+        return;
+    }
+
+    const userInput = document.getElementById('user-input');
+    const typedText = userInput.value;
+    const selectionStart = userInput.selectionStart;
+    const selectionEnd = userInput.selectionEnd;
+
+    playerViewsContainer.innerHTML = '';
+
+    if (scrollingViewEnabled) {
+        playerViewsContainer.className = 'grid grid-cols-1 gap-8';
+        const view = document.createElement('div');
+        view.className = 'glassmorphism p-6 rounded-lg';
+        let content = `
+            <div class="relative">
+                <div class="overflow-hidden">
+                    <div id="text-display-shared" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300 whitespace-nowrap relative transition-transform duration-300 ease-out">
+                    </div>
+                </div>
+                <textarea id="user-input" rows="5"
+                    class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
+            </div>
+        `;
+        view.innerHTML = content;
+        playerViewsContainer.appendChild(view);
+        
+        const textDisplay = document.getElementById('text-display-shared');
+        populateTextDisplay(textDisplay, originalText);
+
+        Object.keys(players).forEach(playerId => {
+            const isMe = playerId === peer.id;
+            const cursor = document.createElement('div');
+            cursor.id = `cursor-${playerId}`;
+            cursor.className = `cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}`;
+            textDisplay.appendChild(cursor);
+        });
+
+    } else {
+        playerViewsContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-8';
+        const myPlayerView = createPlayerView(peer.id, true);
+        playerViewsContainer.appendChild(myPlayerView);
+
+        Object.keys(players).forEach(playerId => {
+            if (playerId === peer.id) return;
+            const playerView = createPlayerView(playerId, false);
+            playerViewsContainer.appendChild(playerView);
+        });
+        
+        Object.keys(players).forEach(playerId => {
+            const textDisplay = document.getElementById(`text-display-${playerId}`);
+            populateTextDisplay(textDisplay, originalText);
+        });
+    }
+
+    const newUserInput = document.getElementById('user-input');
+    newUserInput.addEventListener('input', checkInput);
+    newUserInput.maxLength = originalText.length;
+    newUserInput.value = typedText;
+    newUserInput.disabled = false;
+    newUserInput.focus();
+    newUserInput.setSelectionRange(selectionStart, selectionEnd);
+
+    if (scrollingViewEnabled) {
+        updateScrollingView(typedText);
+        Object.values(players).forEach(p => {
+            if (p.id !== peer.id && p.typedText) {
+                updateOpponentProgress({ id: p.id, typedText: p.typedText });
+            }
+        });
+    } else {
+        const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
+        updateTextDisplay(myTextDisplay, typedText, 'my-view');
+        Object.values(players).forEach(p => {
+            if (p.id !== peer.id && p.typedText) {
+                const opponentTextDisplay = document.getElementById(`text-display-${p.id}`);
+                if (opponentTextDisplay) {
+                    updateTextDisplay(opponentTextDisplay, p.typedText, 'opponent-view');
+                }
+            }
+        });
+    }
 });
 
 initializePeer();
