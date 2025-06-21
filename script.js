@@ -496,7 +496,7 @@ function updateTimer() {
 
     if (isHost) {
         broadcast({ type: 'progress', payload: { id: peer.id, progress: userInput.value.length, wpm: wpm } });
-    } else if (conn) {
+    } else {
         const payload = { type: 'progress', payload: { wpm, typedText: userInput.value } };
         conn.send(payload);
     }
@@ -566,7 +566,16 @@ function checkInput() {
         updateTextDisplay(myTextDisplay, typedText, 'my-view');
     }
 
-    if (typedText === originalText) {
+    if (isHost) {
+        broadcast({ type: 'progress', payload: { id: peer.id, progress: typedText } });
+    } else {
+        conn.send({ type: 'progress', payload: { id: peer.id, progress: typedText } });
+    }
+
+    const normalizedTypedText = typedText.replace(/\r\n/g, '\n');
+    const normalizedOriginalText = originalText.replace(/\r\n/g, '\n');
+
+    if (normalizedTypedText === normalizedOriginalText) {
         finishGame();
     }
 }
@@ -628,7 +637,7 @@ function updateOpponentProgress(data) {
 
     const opponentTextDisplay = document.getElementById(`text-display-${data.id}`);
     if (opponentTextDisplay) {
-        updateTextDisplay(opponentTextDisplay, data.typedText, 'opponent-view');
+        updateTextDisplay(opponentTextDisplay, data.progress, 'opponent-view');
     }
 }
 
@@ -636,13 +645,16 @@ function handleOpponentFinished(data) {
     if (players[data.id] && !players[data.id].finished) {
         players[data.id].finished = true;
         players[data.id].result = data.result;
-        
-        const opponentView = document.getElementById(`player-view-${data.id}`);
-        if (opponentView) {
-            opponentView.classList.add('opacity-50');
+
+        const playerView = document.getElementById(`player-view-${data.id}`);
+        if (playerView) {
+            playerView.classList.add('border-green-500', 'border-2', 'opacity-75');
+            const nameElement = playerView.querySelector('p.font-medium');
+            if (nameElement && !nameElement.textContent.includes('(Finished)')) {
+                nameElement.innerHTML += ' <span class="text-green-400 font-bold">(Finished)</span>';
+            }
         }
         
-        gameStatus.textContent = `${players[data.id].name} finished!`;
         checkAllFinished();
     }
 }
