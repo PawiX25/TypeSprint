@@ -63,8 +63,13 @@ const peerConfig = {
 function showModal(title, message, onclose) {
     modalTitle.textContent = title;
     modalMessage.textContent = message;
+    modalMessage.innerHTML = '';
+    modalMessage.appendChild(document.createTextNode(message));
+
     modal.classList.remove('hidden');
     modal.classList.add('fade-in');
+    chartContainer.style.display = 'none';
+
     modalCloseBtn.onclick = () => {
         modal.classList.add('hidden');
         modal.classList.remove('fade-in');
@@ -586,22 +591,23 @@ function checkInput() {
 
 function finishGame() {
     if (players[peer.id].finished) return;
-    gameFinished = true;
+    
     players[peer.id].finished = true;
-
     clearInterval(timerInterval);
+    
     const userInput = document.getElementById('user-input');
     userInput.disabled = true;
-    const finalTime = Math.floor((new Date().getTime() - startTime) / 1000);
+
+    const finalTime = Math.max(1, Math.floor((new Date().getTime() - startTime) / 1000));
     const wpm = calculateWPM(userInput.value, finalTime);
-    players[peer.id].result = { time: finalTime, wpm: wpm };
+    const accuracy = calculateAccuracy(userInput.value, originalText);
+    players[peer.id].result = { time: finalTime, wpm: wpm, accuracy: accuracy };
     
     const myResult = players[peer.id].result;
 
     if (isHost) {
         broadcast({ type: 'finished', payload: { id: peer.id, result: myResult } });
-        checkAllFinished();
-    } else {
+    } else if (conn) {
         conn.send({ type: 'finished', payload: myResult });
     }
 
@@ -611,8 +617,11 @@ function finishGame() {
     }
 
     const allFinished = Object.values(players).every(p => p.finished);
-    if (!allFinished) {
-        showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} WPM!\nWaiting for other players...`);
+    if (allFinished) {
+        setTimeout(checkAllFinished, 100);
+    } else if (!gameFinished) {
+        gameFinished = true;
+        showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} WPM and ${myResult.accuracy}% accuracy!\n\nWaiting for other players...`);
     }
 }
 
@@ -659,33 +668,64 @@ function handleOpponentFinished(data) {
             }
         }
         
-        checkAllFinished();
+        const allFinished = Object.values(players).every(p => p.finished);
+        if (allFinished) {
+            showGameOverScreen();
+        }
     }
 }
 
 function showGameOverScreen() {
     const sortedPlayers = Object.values(players).sort((a, b) => {
-        if (!a.result) return 1;
-        if (!b.result) return -1;
-        return b.result.wpm - a.result.wpm;
+        if (!a.result || !b.result) return a.result ? -1 : 1;
+        if (b.result.wpm !== a.result.wpm) {
+            return b.result.wpm - a.result.wpm;
+        }
+        return a.result.time - b.result.time;
     });
 
-    let title = 'Game Over!';
-    if (sortedPlayers.length > 0 && sortedPlayers[0].name === players[peer.id].name) {
-        title = 'You Win!';
+    let title = 'Race Over!';
+    if (sortedPlayers.length > 1 && sortedPlayers[0].id === peer.id) {
+        title = 'You Won! 🎉';
+    } else if (sortedPlayers.length === 1) {
+        title = 'Practice Complete!';
     }
 
-    let message = sortedPlayers.map((p, index) => {
-        return `${index + 1}. ${p.name} - ${p.result.wpm} WPM in ${p.result.time}s`;
-    }).join('\n');
+    const resultsHTML = sortedPlayers.map((p, index) => {
+        if (!p.result) return '';
+        const isMe = p.id === peer.id;
+        const rankColor = index === 0 ? 'text-yellow-300' : (index === 1 ? 'text-gray-300' : (index === 2 ? 'text-orange-400' : 'text-gray-500'));
+        const bgClass = isMe ? 'bg-white/10' : 'bg-white/5';
+        
+        return `
+            <div class="flex items-center justify-between p-3 rounded-lg ${bgClass} transition-all duration-300 hover:bg-white/20">
+                <div class="flex items-center gap-3">
+                    <span class="font-bold text-xl w-8 text-center ${rankColor}">${index + 1}</span>
+                    <span class="font-semibold ${isMe ? 'text-cyan-300' : 'text-gray-200'}">${p.name}</span>
+                </div>
+                <div class="text-right">
+                    <div class="font-bold text-lg">${p.result.wpm} <span class="text-sm font-normal text-gray-400">WPM</span></div>
+                    <div class="text-xs text-gray-400">${p.result.accuracy}% Acc</div>
+                </div>
+            </div>
+        `;
+    }).join('');
 
-    showModal(title, message, () => {
+    modalTitle.textContent = title;
+    modalMessage.innerHTML = `<div class="space-y-2 text-left">${resultsHTML}</div>`;
+    modal.classList.remove('hidden');
+    modal.classList.add('fade-in');
+
+    modalCloseBtn.onclick = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('fade-in');
         switchToLobbyView();
-        chartContainer.style.display = 'none';
         if (statsChartInstance) {
             statsChartInstance.destroy();
+            statsChartInstance = null;
         }
-    });
+        chartContainer.style.display = 'none';
+    };
 
     if (players[peer.id].finished) {
         displayStatsGraph();
@@ -698,7 +738,7 @@ function displayStatsGraph() {
         statsChartInstance.destroy();
     }
 
-    const labels = raceStats.map(s => `${s.time}s`);
+    const labels = raceStats.map(s => s.time);
     const wpmData = raceStats.map(s => s.wpm);
     const accuracyData = raceStats.map(s => s.accuracy);
 
@@ -712,7 +752,8 @@ function displayStatsGraph() {
                     data: wpmData,
                     borderColor: '#67e8f9', // cyan-300
                     backgroundColor: 'rgba(103, 232, 249, 0.1)',
-                    tension: 0.3,
+                    fill: true,
+                    tension: 0.4,
                     yAxisID: 'y',
                 },
                 {
@@ -720,7 +761,8 @@ function displayStatsGraph() {
                     data: accuracyData,
                     borderColor: '#fca5a5', // red-300
                     backgroundColor: 'rgba(252, 165, 165, 0.1)',
-                    tension: 0.3,
+                    fill: true,
+                    tension: 0.4,
                     yAxisID: 'y1',
                 }
             ]
@@ -728,26 +770,69 @@ function displayStatsGraph() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    labels: { color: '#e5e5e5', boxWidth: 12, padding: 20 }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(10, 10, 10, 0.8)',
+                    titleColor: '#e5e5e5',
+                    bodyColor: '#e5e5e5',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                    padding: 10,
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += context.parsed.y;
+                                if (context.dataset.yAxisID === 'y1') {
+                                    label += '%';
+                                }
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
             scales: {
                 x: {
-                    title: { display: true, text: 'Time' }
+                    title: { display: true, text: 'Time (s)', color: '#a3a3a3' },
+                    ticks: { color: '#a3a3a3' },
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
                 },
                 y: {
                     type: 'linear',
                     display: true,
                     position: 'left',
-                    title: { display: true, text: 'WPM' }
+                    title: { display: true, text: 'WPM', color: '#67e8f9' },
+                    ticks: { color: '#67e8f9', stepSize: 20 },
+                    grid: { color: 'rgba(103, 232, 249, 0.1)' },
+                    beginAtZero: true
                 },
                 y1: {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    min: 0,
+                    min: Math.max(0, Math.min(...accuracyData) - 10),
                     max: 100,
-                    title: { display: true, text: 'Accuracy (%)' },
-                    grid: {
-                        drawOnChartArea: false, 
-                    },
+                    title: { display: true, text: 'Accuracy (%)', color: '#fca5a5' },
+                    ticks: { color: '#fca5a5', stepSize: 10 },
+                    grid: { drawOnChartArea: false },
+                },
+            },
+            elements: {
+                point:{
+                    radius: 0,
+                    hoverRadius: 5,
+                    hitRadius: 10
                 }
             }
         }
@@ -755,6 +840,7 @@ function displayStatsGraph() {
 }
 
 function resetGame() {
+    gameFinished = false;
     clearInterval(timerInterval);
     if (isHost) {
         broadcast({ type: 'host-left' });
