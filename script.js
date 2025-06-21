@@ -25,6 +25,11 @@ const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const settingsModalContent = document.getElementById('settings-modal-content');
+const textGenerationSection = document.getElementById('text-generation-section');
+const customTextInput = document.getElementById('custom-text-input');
+const generateTextBtn = document.getElementById('generate-text-btn');
+const chartContainer = document.getElementById('chart-container');
+const statsChart = document.getElementById('stats-chart');
 
 let peer;
 let conn;
@@ -37,6 +42,8 @@ let startTime;
 let timerInterval;
 let originalText = '';
 let scrollingViewEnabled = false;
+let raceStats = [];
+let statsChartInstance;
 
 const sentences = [
     "The quick brown fox jumps over the lazy dog.",
@@ -81,13 +88,13 @@ function updatePlayerList() {
     }
 
     if (isHost) {
-        const allReady = Object.values(players).every(p => p.ready);
+        startGameBtn.style.display = 'block';
+        textGenerationSection.style.display = 'block';
+        const allReady = Object.values(players).every(p => p.ready || p.id === peer.id);
         if (allReady && Object.keys(players).length > 1) {
             startGameBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            startGameBtn.disabled = false;
         } else {
             startGameBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            startGameBtn.disabled = true;
         }
     }
 }
@@ -101,6 +108,7 @@ function showLobbyView() {
     lobbyPlayers.style.display = 'block';
     if (isHost) {
         startGameBtn.style.display = 'block';
+        textGenerationSection.style.display = 'block';
     }
     updatePlayerList();
 }
@@ -214,8 +222,7 @@ function handleData(data, senderId) {
                 updatePlayerList();
                 break;
             case 'start-game':
-                originalText = data.payload;
-                startGame(originalText);
+                startGame(data.payload.text);
                 break;
             case 'progress':
                 if (data.payload.id !== peer.id) {
@@ -383,12 +390,7 @@ function startGame(text) {
 
     playerViewsContainer.innerHTML = '';
 
-    if (isHost) {
-        originalText = sentences[Math.floor(Math.random() * sentences.length)];
-        broadcast({ type: 'start-game', payload: originalText });
-    } else {
-        originalText = text;
-    }
+    originalText = text;
 
     if (scrollingViewEnabled) {
         playerViewsContainer.className = 'grid grid-cols-1 gap-8';
@@ -487,11 +489,13 @@ function updateTimer() {
     const elapsedTime = Math.floor((new Date().getTime() - startTime) / 1000);
     timerDisplay.innerHTML = `Time: <span class="font-mono">${elapsedTime}s</span>`;
     const wpm = calculateWPM(userInput.value, elapsedTime);
+    const accuracy = calculateAccuracy(userInput.value, originalText);
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">${wpm}</span>`;
 
+    raceStats.push({ time: elapsedTime, wpm, accuracy });
+
     if (isHost) {
-        const payload = { type: 'progress', payload: { id: peer.id, wpm, typedText: userInput.value } };
-        broadcast(payload);
+        broadcast({ type: 'progress', payload: { id: peer.id, progress: userInput.value.length, wpm: wpm } });
     } else if (conn) {
         const payload = { type: 'progress', payload: { wpm, typedText: userInput.value } };
         conn.send(payload);
@@ -500,11 +504,20 @@ function updateTimer() {
 
 function calculateWPM(text, elapsedTime) {
     if (elapsedTime > 0) {
-        const correctChars = text.split('').filter((char, index) => char === originalText[index]).length;
-        const words = correctChars / 5;
+        const words = text.trim().split(/\s+/).length;
         return Math.round((words / elapsedTime) * 60);
     }
     return 0;
+}
+
+function calculateAccuracy(typed, original) {
+    let correct = 0;
+    for (let i = 0; i < typed.length; i++) {
+        if (typed[i] === original[i]) {
+            correct++;
+        }
+    }
+    return typed.length > 0 ? Math.round((correct / typed.length) * 100) : 100;
 }
 
 function updateTextDisplay(container, typedText, viewType) {
@@ -593,7 +606,7 @@ function finishGame() {
 function checkAllFinished() {
     const allFinished = Object.values(players).every(p => p.finished);
     if (allFinished) {
-        setTimeout(showGameOverScreen, 100);
+        showGameOverScreen();
     }
 }
 
@@ -647,14 +660,82 @@ function showGameOverScreen() {
     }
 
     let message = sortedPlayers.map((p, index) => {
-        if (p.result) {
-            return `${index + 1}. ${p.name}: ${p.result.wpm} WPM (in ${p.result.time}s)`;
-        } else {
-            return `${index + 1}. ${p.name}: Did not finish`;
-        }
+        return `${index + 1}. ${p.name} - ${p.result.wpm} WPM in ${p.result.time}s`;
     }).join('\n');
 
-    showModal(title, message, switchToLobbyView);
+    showModal(title, message, () => {
+        switchToLobbyView();
+        chartContainer.style.display = 'none';
+        if (statsChartInstance) {
+            statsChartInstance.destroy();
+        }
+    });
+
+    if (players[peer.id].finished) {
+        displayStatsGraph();
+    }
+}
+
+function displayStatsGraph() {
+    chartContainer.style.display = 'block';
+    if (statsChartInstance) {
+        statsChartInstance.destroy();
+    }
+
+    const labels = raceStats.map(s => `${s.time}s`);
+    const wpmData = raceStats.map(s => s.wpm);
+    const accuracyData = raceStats.map(s => s.accuracy);
+
+    statsChartInstance = new Chart(statsChart, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'WPM',
+                    data: wpmData,
+                    borderColor: '#67e8f9', // cyan-300
+                    backgroundColor: 'rgba(103, 232, 249, 0.1)',
+                    tension: 0.3,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Accuracy (%)',
+                    data: accuracyData,
+                    borderColor: '#fca5a5', // red-300
+                    backgroundColor: 'rgba(252, 165, 165, 0.1)',
+                    tension: 0.3,
+                    yAxisID: 'y1',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    title: { display: true, text: 'Time' }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: 'WPM' }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    min: 0,
+                    max: 100,
+                    title: { display: true, text: 'Accuracy (%)' },
+                    grid: {
+                        drawOnChartArea: false, 
+                    },
+                }
+            }
+        }
+    });
 }
 
 function resetGame() {
@@ -738,12 +819,59 @@ readyBtn.addEventListener('click', () => {
 
 startGameBtn.addEventListener('click', () => {
     if (isHost) {
-        startGame();
+        const allReady = Object.values(players).every(p => p.ready || p.id === peer.id);
+        if (!allReady || Object.keys(players).length <= 1) return;
+
+        let textToRace = customTextInput.value.trim();
+        if (!textToRace) {
+            textToRace = sentences[Math.floor(Math.random() * sentences.length)];
+        }
+
+        broadcast({ type: 'start-game', payload: { text: textToRace } });
+        startGame(textToRace);
     }
 });
 
 joinLobbyBtn.addEventListener('click', joinGame);
 leaveRoomBtn.addEventListener('click', resetToLobby);
+
+generateTextBtn.addEventListener('click', async () => {
+    const prompt = customTextInput.value.trim();
+    if (!prompt) {
+        showModal('Error', 'Please enter a prompt for the AI.');
+        return;
+    }
+
+    generateTextBtn.disabled = true;
+    generateTextBtn.textContent = 'Generating...';
+
+    try {
+        const response = await fetch('https://ai.hackclub.com/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: `Generate a paragraph of text for a typing race based on this prompt: ${prompt}` }]
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const generatedText = data.choices[0].message.content.trim();
+        customTextInput.value = generatedText;
+
+    } catch (error) {
+        console.error('AI generation error:', error);
+        showModal('Error', 'Failed to generate text. Please try again or paste your own text.');
+    } finally {
+        generateTextBtn.disabled = false;
+        generateTextBtn.textContent = 'Generate with AI';
+    }
+});
 
 playerNameInput.addEventListener('keyup', (e) => {
     if (e.key === 'Enter') {
