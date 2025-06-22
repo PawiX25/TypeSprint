@@ -154,7 +154,7 @@ function initializePeer() {
         if (!isHost) {
             isHost = true;
             playerName = playerNameInput.value.trim() || 'Host';
-            players[peer.id] = { name: playerName, ready: false, finished: false, result: null, typedText: '' };
+            players[peer.id] = { id: peer.id, name: playerName, ready: false, finished: false, result: null, typedText: '' };
             showLobbyView();
         }
         connections[newConn.peer] = newConn;
@@ -196,7 +196,7 @@ function handleData(data, senderId) {
     if (isHost) {
         switch (data.type) {
             case 'name':
-                players[data.payload.id] = { name: data.payload.name, ready: false, finished: false, result: null, typedText: '' };
+                players[data.payload.id] = { id: data.payload.id, name: data.payload.name, ready: false, finished: false, result: null, typedText: '' };
                 broadcast({ type: 'player-update', payload: players });
                 updatePlayerList();
                 break;
@@ -256,7 +256,7 @@ function setupConnectionEvents(c) {
     c.on('open', () => {
         if (!isHost) {
             connectionStatus.textContent = '';
-            players[peer.id] = { name: playerName, ready: false, finished: false, result: null, typedText: '' };
+            players[peer.id] = { id: peer.id, name: playerName, ready: false, finished: false, result: null, typedText: '' };
             c.send({ type: 'name', payload: {id: peer.id, name: playerName} });
             showLobbyView();
         }
@@ -500,17 +500,43 @@ function updateTimer() {
     const userInput = document.getElementById('user-input');
     const elapsedTime = Math.floor((new Date().getTime() - startTime) / 1000);
     timerDisplay.innerHTML = `Time: <span class="font-mono">${elapsedTime}s</span>`;
-    const wpm = calculateWPM(userInput.value, elapsedTime);
+    
+    const typedText = userInput.value;
+    const errors = calculateErrors(typedText, originalText);
+    const grossWPM = calculateGrossWPM(typedText, elapsedTime);
+    const netWPM = calculateNetWPM(grossWPM, errors, elapsedTime);
+    wpmDisplay.innerHTML = `WPM: <span class="font-mono">${netWPM}</span>`;
+    
     const accuracy = calculateAccuracy(userInput.value, originalText);
-    wpmDisplay.innerHTML = `WPM: <span class="font-mono">${wpm}</span>`;
-
-    raceStats.push({ time: elapsedTime, wpm, accuracy });
+    raceStats.push({ time: elapsedTime, wpm: netWPM, accuracy });
 }
 
-function calculateWPM(text, elapsedTime) {
+function calculateErrors(typed, original) {
+    let errors = 0;
+    const typedChars = typed.split('');
+    typedChars.forEach((char, index) => {
+        if (original[index] !== char) {
+            errors++;
+        }
+    });
+    return errors;
+}
+
+function calculateGrossWPM(text, elapsedTime) {
     if (elapsedTime > 0) {
-        const words = text.trim().split(/\s+/).length;
-        return Math.round((words / elapsedTime) * 60);
+        const totalKeystrokes = text.length;
+        const timeInMinutes = elapsedTime / 60;
+        return (totalKeystrokes / 5) / timeInMinutes;
+    }
+    return 0;
+}
+
+function calculateNetWPM(grossWPM, errors, elapsedTime) {
+    if (elapsedTime > 0) {
+        const timeInMinutes = elapsedTime / 60;
+        const errorRate = errors / timeInMinutes;
+        const netWPM = grossWPM - errorRate;
+        return Math.round(Math.max(0, netWPM));
     }
     return 0;
 }
@@ -584,7 +610,7 @@ function checkInput() {
     const normalizedTypedText = typedText.replace(/\r\n/g, '\n');
     const normalizedOriginalText = originalText.replace(/\r\n/g, '\n');
 
-    if (normalizedTypedText === normalizedOriginalText) {
+    if (normalizedTypedText.length >= normalizedOriginalText.length) {
         finishGame();
     }
 }
@@ -598,10 +624,21 @@ function finishGame() {
     const userInput = document.getElementById('user-input');
     userInput.disabled = true;
 
+    // Trim typed text to original length if it's longer
+    let typedText = userInput.value;
+    if (typedText.length > originalText.length) {
+        typedText = typedText.substring(0, originalText.length);
+        userInput.value = typedText;
+    }
+
     const finalTime = Math.max(1, Math.floor((new Date().getTime() - startTime) / 1000));
-    const wpm = calculateWPM(userInput.value, finalTime);
-    const accuracy = calculateAccuracy(userInput.value, originalText);
-    players[peer.id].result = { time: finalTime, wpm: wpm, accuracy: accuracy };
+    
+    const errors = calculateErrors(typedText, originalText);
+    const grossWPM = calculateGrossWPM(typedText, finalTime);
+    const netWPM = calculateNetWPM(grossWPM, errors, finalTime);
+    const accuracy = calculateAccuracy(typedText, originalText);
+    
+    players[peer.id].result = { time: finalTime, wpm: netWPM, accuracy: accuracy, errors: errors };
     
     const myResult = players[peer.id].result;
 
@@ -621,7 +658,7 @@ function finishGame() {
         setTimeout(checkAllFinished, 100);
     } else if (!gameFinished) {
         gameFinished = true;
-        showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} WPM and ${myResult.accuracy}% accuracy!\n\nWaiting for other players...`);
+        showModal('Race Finished!', `You finished in ${myResult.time}s with ${myResult.wpm} Net WPM and ${myResult.accuracy}% accuracy!\n\nWaiting for other players...`);
     }
 }
 
@@ -704,8 +741,8 @@ function showGameOverScreen() {
                     <span class="font-semibold ${isMe ? 'text-cyan-300' : 'text-gray-200'}">${p.name}</span>
                 </div>
                 <div class="text-right">
-                    <div class="font-bold text-lg">${p.result.wpm} <span class="text-sm font-normal text-gray-400">WPM</span></div>
-                    <div class="text-xs text-gray-400">${p.result.accuracy}% Acc</div>
+                    <div class="font-bold text-lg">${p.result.wpm} <span class="text-sm font-normal text-gray-400">Net WPM</span></div>
+                    <div class="text-xs text-gray-400">${p.result.accuracy}% Acc | ${p.result.errors} errs</div>
                 </div>
             </div>
         `;
