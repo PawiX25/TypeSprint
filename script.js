@@ -327,30 +327,18 @@ function createPlayerView(playerId, isMe) {
     const nameColor = isMe ? 'text-cyan-300' : 'text-red-400';
     const textColor = isMe ? 'text-gray-300' : 'text-gray-500';
 
-    let textDisplayContainerClass = "relative";
-    let textDisplayClass = `text-2xl font-mono select-none tracking-wide leading-relaxed ${textColor}`;
-
-    if (isMe && scrollingViewEnabled) {
-        textDisplayContainerClass += " overflow-hidden";
-        textDisplayClass += " whitespace-nowrap transition-transform duration-200 ease-linear";
-    }
+    const textDisplayContainerClass = "relative";
+    const textDisplayClass = `text-2xl font-mono select-none tracking-wide leading-relaxed ${textColor}`;
 
     let content = `
         <p class="text-lg font-medium mb-3 ${nameColor}">${player.name} ${isMe ? '(You)' : ''}</p>
         <div class="relative">
-            <div id="text-display-container-${playerId}" class="${textDisplayContainerClass}">
+            <div id="text-display-container-${playerId}" class="${textDisplayContainerClass}" style="pointer-events: none;">
                 <div id="text-display-${playerId}" class="${textDisplayClass}"></div>
             </div>
+        </div>
     `;
-
-    if (isMe) {
-        content += `
-            <textarea id="user-input" rows="5"
-                      class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
-        `;
-    }
     
-    content += `</div>`;
     view.innerHTML = content;
     return view;
 }
@@ -360,16 +348,20 @@ function updateScrollingView(typedText) {
     if (!textDisplay) return;
     const spans = textDisplay.querySelectorAll('span');
 
-    typedText.split('').forEach((char, index) => {
-        if (spans[index]) {
-            spans[index].classList.remove('text-gray-400', 'text-green-500', 'text-red-500');
-            if (char === originalText[index]) {
-                spans[index].classList.add('text-green-500');
+    for (let i = 0; i < spans.length; i++) {
+        const span = spans[i];
+        span.classList.remove('text-gray-400', 'text-green-500', 'text-red-500');
+
+        if (i < typedText.length) {
+            if (typedText[i] === originalText[i]) {
+                span.classList.add('text-green-500');
             } else {
-                spans[index].classList.add('text-red-500');
+                span.classList.add('text-red-500');
             }
+        } else {
+            span.classList.add('text-gray-400');
         }
-    });
+    }
 
     const myCursor = document.getElementById(`cursor-${peer.id}`);
     if (myCursor) {
@@ -386,6 +378,11 @@ function updateScrollingView(typedText) {
     const cursorLeft = myCursor ? (spans[typedText.length]?.offsetLeft || 0) : 0;
     const scrollOffset = cursorLeft - (containerRect.width / 2);
     textDisplay.style.transform = `translateX(-${scrollOffset}px)`;
+    
+    const userInput = document.getElementById('user-input');
+    if (userInput) {
+        userInput.scrollLeft = scrollOffset;
+    }
 }
 
 function startGame(text) {
@@ -401,67 +398,76 @@ function startGame(text) {
     gameView.classList.add('fade-in');
 
     playerViewsContainer.innerHTML = '';
-
     originalText = text;
 
-    if (scrollingViewEnabled) {
-        playerViewsContainer.className = 'grid grid-cols-1 gap-8';
-        const view = document.createElement('div');
-        view.className = 'glassmorphism p-6 rounded-lg';
-        let content = `
-            <div class="relative">
-                <div class="overflow-hidden">
-                    <div id="text-display-shared" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300 whitespace-nowrap relative transition-transform duration-300 ease-out">
-                    </div>
-                </div>
-                <textarea id="user-input" rows="5"
-                    class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
-            </div>
-        `;
-        view.innerHTML = content;
-        playerViewsContainer.appendChild(view);
-        
-        const textDisplay = document.getElementById('text-display-shared');
+    const standardViewWrapper = document.createElement('div');
+    standardViewWrapper.id = 'standard-view-wrapper';
+    standardViewWrapper.className = 'grid grid-cols-1 md:grid-cols-2 gap-8';
+
+    const myPlayerView = createPlayerView(peer.id, true);
+    standardViewWrapper.appendChild(myPlayerView);
+    const myTextDisplay = myPlayerView.querySelector(`#text-display-${peer.id}`);
+    populateTextDisplay(myTextDisplay, originalText);
+
+    Object.keys(players).forEach(playerId => {
+        if (playerId === peer.id) return;
+        const playerView = createPlayerView(playerId, false);
+        standardViewWrapper.appendChild(playerView);
+        const textDisplay = playerView.querySelector(`#text-display-${playerId}`);
         populateTextDisplay(textDisplay, originalText);
+    });
 
-        Object.keys(players).forEach(playerId => {
-            const isMe = playerId === peer.id;
-            const cursor = document.createElement('div');
-            cursor.id = `cursor-${playerId}`;
-            cursor.className = `cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}`;
-            textDisplay.appendChild(cursor);
-        });
+    const scrollingViewWrapper = document.createElement('div');
+    scrollingViewWrapper.id = 'scrolling-view-wrapper';
+    scrollingViewWrapper.className = 'grid grid-cols-1 gap-8';
+    const scrollingViewContent = document.createElement('div');
+    scrollingViewContent.className = 'glassmorphism p-6 rounded-lg';
+    scrollingViewContent.innerHTML = `
+        <div class="relative">
+            <div class="overflow-hidden" style="pointer-events: none;">
+                <div id="text-display-shared" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300 whitespace-nowrap relative transition-transform duration-300 ease-out">
+                </div>
+            </div>
+        </div>
+    `;
+    scrollingViewWrapper.appendChild(scrollingViewContent);
+    const sharedTextDisplay = scrollingViewContent.querySelector('#text-display-shared');
+    populateTextDisplay(sharedTextDisplay, originalText);
 
-    } else {
-        playerViewsContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-8';
-        const myPlayerView = createPlayerView(peer.id, true);
-        playerViewsContainer.appendChild(myPlayerView);
+    Object.keys(players).forEach(playerId => {
+        const isMe = playerId === peer.id;
+        const cursor = document.createElement('div');
+        cursor.id = `cursor-${playerId}`;
+        cursor.className = `cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}`;
+        sharedTextDisplay.appendChild(cursor);
+    });
 
-        Object.keys(players).forEach(playerId => {
-            if (playerId === peer.id) return;
-            const playerView = createPlayerView(playerId, false);
-            playerViewsContainer.appendChild(playerView);
-        });
-        
-        Object.keys(players).forEach(playerId => {
-            const textDisplay = document.getElementById(`text-display-${playerId}`);
-            populateTextDisplay(textDisplay, originalText);
-        });
-    }
-
-
-    const userInput = document.getElementById('user-input');
+    playerViewsContainer.appendChild(standardViewWrapper);
+    playerViewsContainer.appendChild(scrollingViewWrapper);
+    
+    const userInput = document.createElement('textarea');
+    userInput.id = 'user-input';
+    userInput.rows = 5;
+    userInput.className = 'absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed';
     userInput.addEventListener('input', checkInput);
-
     userInput.maxLength = originalText.length;
     userInput.disabled = true;
     userInput.value = '';
-    
-    if (!scrollingViewEnabled) {
+
+    if (scrollingViewEnabled) {
+        standardViewWrapper.style.display = 'none';
+        scrollingViewWrapper.style.display = 'grid';
+        scrollingViewContent.querySelector('.relative').appendChild(userInput);
+        userInput.style.color = 'transparent';
+        userInput.style.caretColor = 'white';
+    } else {
+        standardViewWrapper.style.display = 'grid';
+        scrollingViewWrapper.style.display = 'none';
+        standardViewWrapper.querySelector(`#player-view-${peer.id} .relative`).appendChild(userInput);
         const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
         updateTextDisplay(myTextDisplay, '', 'my-view');
     }
-
+    
     wpmDisplay.innerHTML = `WPM: <span class="font-mono">0</span>`;
     timerDisplay.innerHTML = `Time: <span class="font-mono">0s</span>`;
     startCountdown();
@@ -555,16 +561,20 @@ function updateTextDisplay(container, typedText, viewType) {
     const spans = container.querySelectorAll('span');
     spans.forEach(span => span.classList.remove('cursor', `${viewType}`));
 
-    typedText.split('').forEach((char, index) => {
-        if (spans[index]) {
-            spans[index].classList.remove('text-gray-400', 'text-green-500', 'text-red-500');
-            if (char === originalText[index]) {
-                spans[index].classList.add('text-green-500');
+    for (let i = 0; i < spans.length; i++) {
+        const span = spans[i];
+        span.classList.remove('text-gray-400', 'text-green-500', 'text-red-500');
+
+        if (i < typedText.length) {
+            if (typedText[i] === originalText[i]) {
+                span.classList.add('text-green-500');
             } else {
-                spans[index].classList.add('text-red-500');
+                span.classList.add('text-red-500');
             }
+        } else {
+            span.classList.add('text-gray-400');
         }
-    });
+    }
 
     if (typedText.length < originalText.length) {
         spans[typedText.length].classList.add('cursor', viewType);
@@ -1047,62 +1057,19 @@ scrollingViewToggle.addEventListener('change', (e) => {
     const selectionStart = userInput.selectionStart;
     const selectionEnd = userInput.selectionEnd;
 
-    playerViewsContainer.innerHTML = '';
+    const standardViewWrapper = document.getElementById('standard-view-wrapper');
+    const scrollingViewWrapper = document.getElementById('scrolling-view-wrapper');
 
     if (scrollingViewEnabled) {
-        playerViewsContainer.className = 'grid grid-cols-1 gap-8';
-        const view = document.createElement('div');
-        view.className = 'glassmorphism p-6 rounded-lg';
-        let content = `
-            <div class="relative">
-                <div class="overflow-hidden">
-                    <div id="text-display-shared" class="text-2xl font-mono select-none tracking-wide leading-relaxed text-gray-300 whitespace-nowrap relative transition-transform duration-300 ease-out">
-                    </div>
-                </div>
-                <textarea id="user-input" rows="5"
-                    class="absolute top-0 left-0 w-full h-full p-0 bg-transparent border-none outline-none resize-none text-2xl font-mono tracking-wide leading-relaxed"></textarea>
-            </div>
-        `;
-        view.innerHTML = content;
-        playerViewsContainer.appendChild(view);
+        standardViewWrapper.style.display = 'none';
+        scrollingViewWrapper.style.display = 'grid';
         
-        const textDisplay = document.getElementById('text-display-shared');
-        populateTextDisplay(textDisplay, originalText);
+        const scrollingViewContent = scrollingViewWrapper.querySelector('.glassmorphism .relative');
+        scrollingViewContent.appendChild(userInput);
 
-        Object.keys(players).forEach(playerId => {
-            const isMe = playerId === peer.id;
-            const cursor = document.createElement('div');
-            cursor.id = `cursor-${playerId}`;
-            cursor.className = `cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}`;
-            textDisplay.appendChild(cursor);
-        });
+        userInput.style.color = 'transparent';
+        userInput.style.caretColor = 'white';
 
-    } else {
-        playerViewsContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-8';
-        const myPlayerView = createPlayerView(peer.id, true);
-        playerViewsContainer.appendChild(myPlayerView);
-
-        Object.keys(players).forEach(playerId => {
-            if (playerId === peer.id) return;
-            const playerView = createPlayerView(playerId, false);
-            playerViewsContainer.appendChild(playerView);
-        });
-        
-        Object.keys(players).forEach(playerId => {
-            const textDisplay = document.getElementById(`text-display-${playerId}`);
-            populateTextDisplay(textDisplay, originalText);
-        });
-    }
-
-    const newUserInput = document.getElementById('user-input');
-    newUserInput.addEventListener('input', checkInput);
-    newUserInput.maxLength = originalText.length;
-    newUserInput.value = typedText;
-    newUserInput.disabled = false;
-    newUserInput.focus();
-    newUserInput.setSelectionRange(selectionStart, selectionEnd);
-
-    if (scrollingViewEnabled) {
         updateScrollingView(typedText);
         Object.values(players).forEach(p => {
             if (p.id !== peer.id && p.typedText) {
@@ -1110,17 +1077,26 @@ scrollingViewToggle.addEventListener('change', (e) => {
             }
         });
     } else {
-        const myTextDisplay = document.getElementById(`text-display-${peer.id}`);
-        updateTextDisplay(myTextDisplay, typedText, 'my-view');
+        scrollingViewWrapper.style.display = 'none';
+        standardViewWrapper.style.display = 'grid';
+        
+        const myPlayerView = standardViewWrapper.querySelector(`#player-view-${peer.id} .relative`);
+        myPlayerView.appendChild(userInput);
+
+        userInput.style.color = ''; 
+        userInput.style.caretColor = '';
+
         Object.values(players).forEach(p => {
-            if (p.id !== peer.id && p.typedText) {
-                const opponentTextDisplay = document.getElementById(`text-display-${p.id}`);
-                if (opponentTextDisplay) {
-                    updateTextDisplay(opponentTextDisplay, p.typedText, 'opponent-view');
-                }
+            const isMe = p.id === peer.id;
+            const textDisplay = document.getElementById(`text-display-${p.id}`);
+            if (textDisplay) {
+                updateTextDisplay(textDisplay, p.typedText, isMe ? 'my-view' : 'opponent-view');
             }
         });
     }
+
+    userInput.focus();
+    userInput.setSelectionRange(selectionStart, selectionEnd);
 });
 
 initializePeer();
