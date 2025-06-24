@@ -521,14 +521,32 @@ function updateTimer() {
 }
 
 function calculateErrors(typed, original) {
-    let errors = 0;
-    const typedChars = typed.split('');
-    typedChars.forEach((char, index) => {
-        if (original[index] !== char) {
-            errors++;
+    const n = typed.length;
+    const m = original.length;
+
+    const target = original.slice(0, n);
+
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) dp[i] = new Array(target.length + 1).fill(0);
+
+    for (let i = 0; i <= n; i++) dp[i][0] = i;
+    for (let j = 0; j <= target.length; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= n; i++) {
+        for (let j = 1; j <= target.length; j++) {
+            if (typed[i - 1] === target[j - 1]) {
+                dp[i][j] = dp[i - 1][j - 1];
+            } else {
+                dp[i][j] = 1 + Math.min(
+                    dp[i - 1][j],
+                    dp[i][j - 1],
+                    dp[i - 1][j - 1]
+                );
+            }
         }
-    });
-    return errors;
+    }
+
+    return dp[n][target.length];
 }
 
 function calculateGrossWPM(text, elapsedTime) {
@@ -551,13 +569,10 @@ function calculateNetWPM(grossWPM, errors, elapsedTime) {
 }
 
 function calculateAccuracy(typed, original) {
-    let correct = 0;
-    for (let i = 0; i < typed.length; i++) {
-        if (typed[i] === original[i]) {
-            correct++;
-        }
-    }
-    return typed.length > 0 ? Math.round((correct / typed.length) * 100) : 100;
+    if (typed.length === 0) return 100;
+    const errors = calculateErrors(typed, original);
+    const correct = typed.length - errors;
+    return Math.max(0, Math.round((correct / typed.length) * 100));
 }
 
 function updateTextDisplay(container, typedText, viewType) {
@@ -585,6 +600,8 @@ function updateTextDisplay(container, typedText, viewType) {
     if (smoothCursorEnabled) {
         if (cursor) {
             cursor.style.display = 'block';
+            cursor.style.transition = 'left 0.05s ease-out, top 0.05s ease-out';
+
             if (typedText.length < originalText.length) {
                 const span = spans[typedText.length];
                 cursor.style.left = `${span.offsetLeft}px`;
@@ -601,10 +618,22 @@ function updateTextDisplay(container, typedText, viewType) {
         }
     } else {
         if (cursor) {
-            cursor.style.display = 'none';
-        }
-        if (typedText.length < originalText.length) {
-            spans[typedText.length].classList.add('cursor', viewType);
+            cursor.style.display = 'block';
+            cursor.style.transition = 'none';
+
+            if (typedText.length < originalText.length) {
+                const span = spans[typedText.length];
+                cursor.style.left = `${span.offsetLeft}px`;
+                cursor.style.top = `${span.offsetTop}px`;
+                cursor.style.height = `${span.offsetHeight}px`;
+            } else if (typedText.length === originalText.length && spans.length > 0) {
+                const lastSpan = spans[spans.length - 1];
+                cursor.style.left = `${lastSpan.offsetLeft + lastSpan.offsetWidth}px`;
+                cursor.style.top = `${lastSpan.offsetTop}px`;
+                cursor.style.height = `${lastSpan.offsetHeight}px`;
+            } else {
+                cursor.style.display = 'none';
+            }
         }
     }
 }
