@@ -476,16 +476,16 @@ function startGame(text) {
 function startCountdown() {
     gameStatus.textContent = 'Get Ready...';
     setTimeout(() => {
-        gameStatus.textContent = '3...';
+        gameStatus.innerHTML = '<span class="countdown-animation">3...</span>';
     }, 1000);
     setTimeout(() => {
-        gameStatus.textContent = '2...';
+        gameStatus.innerHTML = '<span class="countdown-animation">2...</span>';
     }, 2000);
     setTimeout(() => {
-        gameStatus.textContent = '1...';
+        gameStatus.innerHTML = '<span class="countdown-animation">1...</span>';
     }, 3000);
     setTimeout(() => {
-        gameStatus.textContent = 'GO!';
+        gameStatus.innerHTML = '<span class="countdown-animation">GO!</span>';
         beginTyping();
         setTimeout(() => {
             gameStatus.textContent = '';

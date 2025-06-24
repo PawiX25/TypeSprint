@@ -66,6 +66,20 @@
         .scale-up {
             animation: scaleUp 0.3s ease-out forwards;
         }
+        @keyframes countdown-pop {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        .countdown-animation {
+            display: inline-block;
+            animation: countdown-pop 0.3s ease-out;
+        }
         .cursor-element {
             position: absolute;
             width: 2px;
@@ -160,7 +174,7 @@
 
             <!-- Game View -->
             <div id="game-view" class="hidden w-full space-y-10 fade-in">
-                <div id="game-status" class="text-center text-2xl font-semibold text-cyan-400 min-h-[2rem] mb-4"></div>
+                <div id="game-status" class="text-center text-5xl font-bold text-cyan-400 min-h-[5rem] mb-4"></div>
 
                 <div id="player-views-container">
                 </div>
