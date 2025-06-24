@@ -21,6 +21,7 @@ const modalCloseBtn = document.getElementById('modal-close-btn');
 const gameStatus = document.getElementById('game-status');
 const yourLobbyInfo = document.getElementById('your-lobby-info');
 const scrollingViewToggle = document.getElementById('scrolling-view-toggle');
+const smoothCursorToggle = document.getElementById('smooth-cursor-toggle');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
@@ -42,6 +43,7 @@ let startTime;
 let timerInterval;
 let originalText = '';
 let scrollingViewEnabled = false;
+let smoothCursorEnabled = false;
 let raceStats = [];
 let statsChartInstance;
 
@@ -333,8 +335,9 @@ function createPlayerView(playerId, isMe) {
     let content = `
         <p class="text-lg font-medium mb-3 ${nameColor}">${player.name} ${isMe ? '(You)' : ''}</p>
         <div class="relative">
-            <div id="text-display-container-${playerId}" class="${textDisplayContainerClass}" style="pointer-events: none;">
-                <div id="text-display-${playerId}" class="${textDisplayClass}"></div>
+            <div id="text-display-container-${playerId}" class="${textDisplayContainerClass}">
+                <div id="text-display-${playerId}" class="${textDisplayClass}" style="pointer-events: none;"></div>
+                <div id="split-cursor-${playerId}" class="cursor-element ${isMe ? 'bg-cyan-300' : 'bg-red-300'}" style="display: none; position: absolute; top: 0; left: 0; width: 2px; transition: left 0.05s ease-out, top 0.05s ease-out;"></div>
             </div>
         </div>
     `;
@@ -576,20 +579,32 @@ function updateTextDisplay(container, typedText, viewType) {
         }
     }
 
-    if (typedText.length < originalText.length) {
-        spans[typedText.length].classList.add('cursor', viewType);
-    }
+    const playerId = container.id.replace('text-display-', '');
+    const cursor = document.getElementById(`split-cursor-${playerId}`);
 
-    if (viewType === 'my-view' && scrollingViewEnabled) {
-        const cursorSpan = container.querySelector('.cursor.my-view');
-        if (cursorSpan) {
-            const containerWrapper = container.parentElement;
-            const containerRect = containerWrapper.getBoundingClientRect();
-            const cursorRect = cursorSpan.getBoundingClientRect();
-            
-            const scrollOffset = cursorRect.left - containerRect.left - (containerRect.width / 2) + (cursorRect.width / 2);
-            
-            container.style.transform = `translateX(-${scrollOffset}px)`;
+    if (smoothCursorEnabled) {
+        if (cursor) {
+            cursor.style.display = 'block';
+            if (typedText.length < originalText.length) {
+                const span = spans[typedText.length];
+                cursor.style.left = `${span.offsetLeft}px`;
+                cursor.style.top = `${span.offsetTop}px`;
+                cursor.style.height = `${span.offsetHeight}px`;
+            } else if (typedText.length === originalText.length && spans.length > 0) {
+                const lastSpan = spans[spans.length - 1];
+                cursor.style.left = `${lastSpan.offsetLeft + lastSpan.offsetWidth}px`;
+                cursor.style.top = `${lastSpan.offsetTop}px`;
+                cursor.style.height = `${lastSpan.offsetHeight}px`;
+            } else {
+                cursor.style.display = 'none';
+            }
+        }
+    } else {
+        if (cursor) {
+            cursor.style.display = 'none';
+        }
+        if (typedText.length < originalText.length) {
+            spans[typedText.length].classList.add('cursor', viewType);
         }
     }
 }
@@ -1055,8 +1070,14 @@ settingsCloseBtn.addEventListener('click', () => {
     settingsModalContent.classList.remove('scale-up');
 });
 
+smoothCursorToggle.addEventListener('change', (e) => {
+    smoothCursorEnabled = e.target.checked;
+});
+
 scrollingViewToggle.addEventListener('change', (e) => {
     scrollingViewEnabled = e.target.checked;
+
+    updateSettingsVisibility();
 
     if (!startTime || gameFinished) {
         return;
@@ -1108,5 +1129,14 @@ scrollingViewToggle.addEventListener('change', (e) => {
     userInput.focus();
     userInput.setSelectionRange(selectionStart, selectionEnd);
 });
+
+function updateSettingsVisibility() {
+    const smoothSetting = document.getElementById('smooth-cursor-setting');
+    if (smoothSetting) {
+        smoothSetting.style.display = scrollingViewToggle.checked ? 'none' : 'flex';
+    }
+}
+
+updateSettingsVisibility();
 
 initializePeer();
