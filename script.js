@@ -1001,7 +1001,7 @@ generateTextBtn.addEventListener('click', async () => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                messages: [{ role: 'user', content: `Generate a paragraph of text for a typing race based on this prompt: ${prompt}` }]
+                messages: [{ role: 'user', content: `Generate a paragraph for a typing race with the theme "${prompt}". Only return the raw text for the paragraph, without any extra formatting, introductory phrases, or quotation marks.` }]
             }),
         });
 
@@ -1010,7 +1010,17 @@ generateTextBtn.addEventListener('click', async () => {
         }
 
         const data = await response.json();
-        const generatedText = data.choices[0].message.content.trim();
+        let generatedText = data.choices[0].message.content.trim();
+        
+        const colonIndex = generatedText.lastIndexOf(':');
+        if (colonIndex > -1) {
+            generatedText = generatedText.substring(colonIndex + 1).trim();
+        }
+
+        if (generatedText.startsWith('"') && generatedText.endsWith('"')) {
+            generatedText = generatedText.slice(1, -1);
+        }
+        
         customTextInput.value = generatedText;
 
     } catch (error) {
